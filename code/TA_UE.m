@@ -7,11 +7,11 @@ inputDir = [parentDir 'inputs/'];
 outputDir = [parentDir 'outputs/'];
 
 %% LOAD DATA %%
-edges = readtable([inputDir ['edges_tol' num2str(tol) '.csv']]);
-nodes = readtable([inputDir ['nodes_tol' num2str(tol) '.csv']]);
+edges = readtable([inputDir 'edges.csv']);
+nodes = readtable([inputDir 'nodes.csv']);
 
 highway = edges.highway;
-edges = readmatrix([inputDir ['edges_tol' num2str(tol) '.csv']]);
+edges = readmatrix([inputDir 'edges.csv']);
 
 G = digraph(edges(:,1)+1, edges(:,2)+1, edges(:,11));
 G.Nodes.Lon = nodes.x; G.Nodes.Lat = nodes.y;
