@@ -3,8 +3,8 @@ tol = 58.6;
 
 %% DEFINE CONSTANTS %%
 parentDir = ''; % INSERT MAIN DIRECTORY HERE
-inputDir = [parentDir 'inputs/'];
-outputDir = [parentDir 'outputs/'];
+inputDir = [parentDir 'data/inputs/'];
+outputDir = [parentDir 'data/outputs/'];
 
 %% LOAD DATA %%
 edges = readtable([inputDir 'edges.csv']);
@@ -166,3 +166,4 @@ writematrix(iter_UE, [outputDir 'UE_L_best.csv']);
 % LBD
 writematrix(LBD_UE, [outputDir 'UE_LBD.csv']);
 writematrix(LBD_UE_Best, [outputDir 'UE_LBD_best.csv']);
+
