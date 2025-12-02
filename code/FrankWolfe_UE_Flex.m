@@ -1,218 +1,166 @@
-function [UEflows,crit1,crit2,L,Xa_Gi,critLog,critBests,UEflowsBest,crit1Best,crit2Best,iter,LBD,LBDBest]=FrankWolfe_UE_Flex(demand,time,topo_graph,OD_list,eps,capacity,criticalDensity,params,stepbreak,txtName,critLogName,critBestsName)
+function [UEflows,crit1,crit2,L,Xa_Gi,critLog,critBests,UEflowsBest,crit1Best,crit2Best,iter,LBD,LBDBest] = ...
+    FrankWolfe_UE_Flex(demand,time,topo_graph,OD_list,eps,capacity,criticalDensity,params,stepbreak,txtName,critLogName,critBestsName)
 
-%Algorithm written according to Patriksson (2015)
+topo_graph_input = topo_graph;
 
-%Step 0- Initialisation
+num_edges = size(topo_graph.Edges,1);
+num_ods   = length(demand);
 
-topo_graph_input=topo_graph;
+od_orig = OD_list(:,3);
+od_dest = OD_list(:,4);
 
-flow0=zeros(size(topo_graph.Edges,1),1);
-density0 = flow0 .* criticalDensity./capacity;
+flow0    = zeros(num_edges,1);
+density0 = flow0 .* criticalDensity ./ capacity;
 
-traveltime0=BPR_density_smooth(time,density0,criticalDensity,params);
+traveltime0 = BPR_density_smooth(time,density0,criticalDensity,params);
+topo_graph_input.Edges.Weight = traveltime0;
 
-topo_graph_input.Edges.Weight=traveltime0;
+flow = flow0;
 
-% calculate the shortest path for each OD pair to assign all the demand to.
-
-flow=flow0;
-
-for i=1:height(topo_graph_input.Nodes)
-    [~,~,E] = shortestpathtree(topo_graph_input,i,'OutputForm','cell');
-    E_store{i}=E;
+E_store = shortest_paths_for_od_origins(topo_graph_input, od_orig);
+for k = 1:num_ods
+    edgepath = E_store{od_orig(k)}{od_dest(k)};
+    flow(edgepath) = flow(edgepath) + demand(k);
 end
 
-for i=1:length(OD_list)
-    s=OD_list(i,3);
-    t=OD_list(i,4);
-    E1=E_store{s};
-    edgepath=E1{t};
-    flow(edgepath,1)=flow(edgepath,1)+demand(i);
-end
+LBD   = 0;
+L     = 0;
+crit1 = inf;
+crit2 = inf;
 
-LBD=0;
-L=0;
+crit1Best   = crit1;
+crit2Best   = crit2;
+UEflowsBest = flow;
+iter        = 0;
+LBDBest     = LBD;
 
-crit1=inf;
-crit2=inf;
+Xa_Gi = zeros(num_edges, num_ods);
 
-crit1Best=crit1;
-crit2Best=crit2;
-UEflowsBest=flow;
-iter=0;
+critLog   = readmatrix(critLogName);
+critBests = readmatrix(critBestsName);
 
-%======Step 1 - Solve linear programming problem/ search
-%direction=======
-density = flow .* criticalDensity./capacity;
-traveltime=BPR_density_smooth(time,density,criticalDensity,params);
+density    = flow .* criticalDensity ./ capacity;
+traveltime = BPR_density_smooth(time,density,criticalDensity,params);
+topo_graph_input.Edges.Weight = traveltime;
 
-% traveltime=real(traveltime);
-topo_graph_input.Edges.Weight=traveltime;
+while abs(crit1) > eps || abs(crit2) > eps
+    L = L + 1;
 
-while abs(crit1)>eps || abs(crit2)>eps
-    L=L+1;
-    
-    if L==stepbreak
-        disp(['Max iterations reached...',num2str(L)])
-    
-    
-        Xa_Gi=zeros(length(flow),length(OD_list));
-        for i=1:height(topo_graph_input.Nodes)
-            [~,~,E] = shortestpathtree(topo_graph_input,i,'OutputForm','cell');
-            E_store{i}=E;
+    if L == stepbreak
+        disp(['Max iterations reached...', num2str(L)])
+
+        Xa_Gi  = zeros(num_edges, num_ods);
+        E_store = shortest_paths_for_od_origins(topo_graph_input, od_orig);
+        for k = 1:num_ods
+            edgepath = E_store{od_orig(k)}{od_dest(k)};
+            Xa_Gi(edgepath, k) = 1;
         end
-    
-        for i=1:length(OD_list)
-            s=OD_list(i,3);
-            t=OD_list(i,4);
-            E1=E_store{s};
-            edgepath=E1{t};
-            Xa_Gi(edgepath,i)=1;
-        end
-    
-        UEflows=flow;
-        % crit1=crit1Best;
-        % crit2=crit2Best;
+
+        UEflows = flow;
         break
     end
-    
-    % calculate the shortest path for each OD pair to assign all the demand to.
-    flow_y=zeros(length(flow),1);
-    
-    Xa_Gi=zeros(length(flow),length(OD_list));
-    
-    for i=1:height(topo_graph_input.Nodes)
-        [~,~,E] = shortestpathtree(topo_graph_input,i,'OutputForm','cell');
-        E_store{i}=E;
+
+    flow_y = zeros(num_edges,1);
+
+    E_store = shortest_paths_for_od_origins(topo_graph_input, od_orig);
+    for k = 1:num_ods
+        edgepath = E_store{od_orig(k)}{od_dest(k)};
+        flow_y(edgepath) = flow_y(edgepath) + demand(k);
     end
-    
-    for i=1:length(OD_list)
-        s=OD_list(i,3);
-        t=OD_list(i,4);
-        E1=E_store{s};
-        edgepath=E1{t};
-        
-        flow_y(edgepath,1)=flow_y(edgepath,1)+demand(i);
-        Xa_Gi(edgepath,i)=1;
-    end
-    
-    
-    flow_p=flow_y-flow;
-    density = flow .* criticalDensity./capacity;
-    density_y = flow_y .* criticalDensity./capacity;
+
+    flow_p   = flow_y - flow;
+    density  = flow    .* criticalDensity ./ capacity;
+    density_y = flow_y .* criticalDensity ./ capacity;
     density_p = density_y - density;
-    %==================== step 2: Convergence Check===================
-    
-    %gradT=BPR_func(time,flow,capacity,alpha,beta);
-    %T=flow'*(traveltime);
-    %T_Bar=T+gradT'*flow_p;
+
     gradT = BPR_density_smooth(time,density,criticalDensity,params);
-    T=flow'*(traveltime);
-    T_Bar=T+gradT'*flow_p;
-    
-    LBD=max([LBD,T_Bar]);
-    
-    crit1=abs(T-LBD)/LBD;
-    
-    if (crit1 <= crit1Best) && (crit2 <= crit2Best)
-        crit1Best = crit1;
-        crit2Best = crit2;
-        UEflowsBest = flow;
-        iter = L;
-        LBDBest = LBD;
-        critBests = readmatrix(critBestsName);
-        critBests(size(critBests,1)+1,:) = [crit1Best,crit2Best,iter];
-        writematrix(critBests, critBestsName);
-    end
-    
-    if  abs(crit1)<eps
-        UEflows=flow;
-        critLog = readmatrix(critLogName);
-        critLog(L+1,:) = [crit1,crit2];
-        writematrix(critLog, critLogName);
-        fprintf('First convergence check met, iter=%d\n',L')
+    T     = flow' * traveltime;
+    T_Bar = T + gradT' * flow_p;
+
+    LBD   = max([LBD, T_Bar]);
+    crit1 = abs(T - LBD) / LBD;
+
+    [crit1Best,crit2Best,UEflowsBest,iter,LBDBest,critBests] = ...
+        update_best_solution(crit1,crit2,flow,L,LBD, ...
+                             crit1Best,crit2Best,UEflowsBest,iter,LBDBest, ...
+                             critBests);
+
+    if (abs(crit1) < eps) && (L > 100)
+        UEflows = flow;
+        critLog(L+1,:) = [crit1, crit2];
+        fprintf('First convergence check met, iter=%d\n', L)
         break
     end
-    
-    %=============== Step 3: update the flows===================
-    % flow=flow+ (1/L)*flow_p;
-    % Find step size alpha
-    
-    fun = @(step)BeckmannMin_UE(step,density,density_y,time,params,criticalDensity);
-    
-    step_new=fminbnd(fun,0,1);
-    %step_new = max(step_new, 2/(L+2));
 
-    % % Improved step size calculation
-    % step_numerator = sum((flow_p - flow) .* traveltime);
-    % step_denominator = sum((flow_p - flow).^2 .* traveltime);
-    % % Add a small perturbation to prevent division by zero
-    % step_new = min(1.0, max(0.0, step_numerator / (step_denominator + 1e-10)));
-    
-    % step_new=1/L;
-    flow = flow + step_new * flow_p;
+    fun      = @(step) BeckmannMin_UE(step,density,density_y,time,params,criticalDensity);
+    step_new = fminbnd(fun,0,1);
+
+    flow    = flow    + step_new * flow_p;
     density = density + step_new * density_p;
-    
-    %=======Step 4: Stopping Cirterion============
+
     traveltime = BPR_density_smooth(time,density,criticalDensity,params);
-    
-    topo_graph_input.Edges.Weight=traveltime;
-    
-    %T_new=flow'*traveltime;
-    T_new=flow'*traveltime;
-    
-    crit2=abs(T_new-LBD)/LBD;
+    topo_graph_input.Edges.Weight = traveltime;
 
-    % %disp(['Iteration: ', num2str(L), ' Crit1: ', num2str(crit1), ' Crit2: ', num2str(crit2)])
-    disp(['Iteration: ', num2str(L), ' Step Size: ', num2str(step_new)])
-    disp(['Crit1: ', num2str(crit1), ' Crit2: ', num2str(crit2)])
-    disp(['Flow difference norm: ', num2str(norm(flow_p))])
-    disp(['Travel Time Update: ', num2str(mean(traveltime))])
+    T_new = flow' * traveltime;
+    crit2 = abs(T_new - LBD) / LBD;
 
-    if (crit1 <= crit1Best) && (crit2 <= crit2Best)
-        crit1Best = crit1;
-        crit2Best = crit2;
-        UEflowsBest = flow;
-        iter = L;
-        LBDBest = LBD;
-        critBests = readmatrix(critBestsName);
-        critBests(size(critBests,1)+1,:) = [crit1Best,crit2Best,iter];
-        writematrix(critBests, critBestsName);
-    end
-    
-    if  abs(crit2)<eps
-        Xa_Gi=zeros(length(flow),length(OD_list));
-        for i=1:height(topo_graph_input.Nodes)
-            [~,~,E] = shortestpathtree(topo_graph_input,i,'OutputForm','cell');
-            E_store{i}=E;
+    [crit1Best,crit2Best,UEflowsBest,iter,LBDBest,critBests] = ...
+        update_best_solution(crit1,crit2,flow,L,LBD, ...
+                             crit1Best,crit2Best,UEflowsBest,iter,LBDBest, ...
+                             critBests);
+
+    if (abs(crit2) < eps) && (L > 100)
+        Xa_Gi  = zeros(num_edges, num_ods);
+        E_store = shortest_paths_for_od_origins(topo_graph_input, od_orig);
+        for k = 1:num_ods
+            edgepath = E_store{od_orig(k)}{od_dest(k)};
+            Xa_Gi(edgepath, k) = 1;
         end
-    
-        for i=1:length(OD_list)
-            s=OD_list(i,3);
-            t=OD_list(i,4);
-            E1=E_store{s};
-            edgepath=E1{t};
-            Xa_Gi(edgepath,i)=1;
-        end
-        UEflows=flow;
-        critLog = readmatrix(critLogName);
-        critLog(L+1,:) = [crit1,crit2];
-        writematrix(critLog, critLogName);
-        fprintf('Second convergence check met, iter=%d\n',L)
+
+        UEflows = flow;
+        critLog(L+1,:) = [crit1, crit2];
+        fprintf('Second convergence check met, iter=%d\n', L)
         break
-        
     end
 
-    if mod(L,100) == 0
+    if mod(L,10) == 0
+        disp(['Iteration: ', num2str(L), ' Crit1: ', num2str(crit1), ' Crit2: ', num2str(crit2)])
         fid = fopen(txtName,'a+');
         fprintf(string(datetime('now')) + ': completed iteration %d.\n', L);
         fclose(fid);
     end
 
-    critLog = readmatrix(critLogName);
-    critLog(L+1,:) = [crit1,crit2];
-    writematrix(critLog, critLogName);
+    critLog(L+1,:) = [crit1, crit2];
+end
+
+writematrix(critLog,   critLogName);
+writematrix(critBests, critBestsName);
 
 end
 
+function E_store = shortest_paths_for_od_origins(topo_graph_input, od_orig)
+    num_nodes  = height(topo_graph_input.Nodes);
+    E_store    = cell(num_nodes,1);
+    od_orig_unique = unique(od_orig);
+
+    for j = 1:numel(od_orig_unique)
+        s = od_orig_unique(j);
+        [~,~,E] = shortestpathtree(topo_graph_input, s, 'OutputForm', 'cell');
+        E_store{s} = E;
+    end
+end
+
+function [crit1Best,crit2Best,UEflowsBest,iter,LBDBest,critBests] = ...
+    update_best_solution(crit1,crit2,flow,L,LBD, ...
+                         crit1Best,crit2Best,UEflowsBest,iter,LBDBest, ...
+                         critBests)
+
+    if (crit1 <= crit1Best) && (crit2 <= crit2Best)
+        crit1Best   = crit1;
+        crit2Best   = crit2;
+        UEflowsBest = flow;
+        iter        = L;
+        LBDBest     = LBD;
+        critBests(end+1,:) = [crit1Best, crit2Best, iter];
+    end
 end
