@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-import os
-from datetime import datetime
-
 import numpy as np
-import pandas as pd
 
+from no2d.frank_wolfe.IO_operations import (
+    load_edges, load_nodes, load_od_list, load_demand,
+    init_ue_logs, save_ue_results
+)
 from no2d.frank_wolfe.frankwolfe_ue_flex import FrankWolfe_UE_Flex
 from no2d.frank_wolfe.shortestpathtree import Digraph
 
@@ -14,20 +14,17 @@ def TA_UE(
     tol: float = 58.6,
     parentDir: str = "../../data/",
 ) -> None:
-    inputDir = os.path.join(parentDir, "inputs/")
-    outputDir = os.path.join(parentDir, "outputs/")
-
-    edges = pd.read_csv(os.path.join(inputDir, "edges.csv"))
-    _nodes = pd.read_csv(os.path.join(inputDir, "nodes.csv"))
+    edges = load_edges(parentDir)
+    _nodes = load_nodes(parentDir)
 
     highway = edges["highway"].astype(str).to_numpy()
 
-    u0              = edges["u"].to_numpy(dtype=int)
-    v0              = edges["v"].to_numpy(dtype=int)
+    u0 = edges["u"].to_numpy(dtype=int)
+    v0 = edges["v"].to_numpy(dtype=int)
 
-    length_m        = edges["length"].to_numpy(dtype=float)
-    speedlimit_kmh  = edges["speedlim"].to_numpy(dtype=float)
-    capacity        = edges["capacity"].to_numpy(dtype=float)
+    length_m = edges["length"].to_numpy(dtype=float)
+    speedlimit_kmh = edges["speedlim"].to_numpy(dtype=float)
+    capacity = edges["capacity"].to_numpy(dtype=float)
     criticalDensity = edges["criticalDensity"].to_numpy(dtype=float)
 
     u = u0 + 1
@@ -43,19 +40,18 @@ def TA_UE(
         capacity=capacity,
         critical_density=criticalDensity,
         n_nodes=n_nodes,
-        weight=length_m
+        weight=length_m,
     )
 
     roadClass = np.empty(edges.shape[0], dtype=object)
     for ii in range(edges.shape[0]):
-        h = str(highway[ii])
+        h = highway[ii]
         if ("motorway" in h) or ("trunk" in h):
             roadClass[ii] = "highway"
+        elif ("tertiary" in h) or ("unclassified" in h):
+            roadClass[ii] = "rural"
         else:
-            if ("tertiary" in h) or ("unclassified" in h):
-                roadClass[ii] = "rural"
-            else:
-                roadClass[ii] = "urban"
+            roadClass[ii] = "urban"
 
     alpha = np.full(G.u.size, 0.15, dtype=float)
     beta = np.full(G.u.size, 4.0, dtype=float)
@@ -66,18 +62,10 @@ def TA_UE(
     eps = 1e-5
     steplimit = 125000
 
-    txtName = os.path.join(parentDir, "Out_TA_HPC_UE.txt")
-    with open(txtName, "w", encoding="utf-8") as f:
-        f.write(f"File created: {datetime.now().isoformat()}.\n")
+    txtName, critLogName, critBestsName = init_ue_logs(parentDir, steplimit)
 
-    critLogName = os.path.join(parentDir, "All_crit1_crit2_UE.csv")
-    np.savetxt(critLogName, np.full((steplimit + 1, 2), np.inf, dtype=float), delimiter=",")
-
-    critBestsName = os.path.join(parentDir, "Best_crit1_crit2_UE.csv")
-    np.savetxt(critBestsName, np.array([[np.inf, np.inf, np.inf]], dtype=float), delimiter=",")
-
-    OD_list = np.loadtxt(os.path.join(inputDir, f"OD_list_tol{tol}.csv"), delimiter=",", skiprows=1)
-    demand = np.loadtxt(os.path.join(inputDir, "demand.csv"), delimiter=",", skiprows=1)
+    OD_list = load_od_list(parentDir, tol)
+    demand = load_demand(parentDir)
 
     inds = np.where(OD_list[:, 0] == OD_list[:, 1])[0]
     OD_list = np.delete(OD_list, inds, axis=0)
@@ -122,7 +110,7 @@ def TA_UE(
             stepbreak=steplimit,
             txtName=txtName,
             critLogName=critLogName,
-            critBestsName=critBestsName
+            critBestsName=critBestsName,
         )
 
         UEflows.append(UEflows_i)
@@ -131,22 +119,19 @@ def TA_UE(
     UEflows = np.column_stack(UEflows) if UEflows else np.empty((G.u.size, 0), dtype=float)
     UEflowsBest = np.column_stack(UEflowsBest) if UEflowsBest else np.empty((G.u.size, 0), dtype=float)
 
-    os.makedirs(outputDir, exist_ok=True)
-
-    np.savetxt(os.path.join(outputDir, "UE_flow.csv"), UEflows, delimiter=",")
-    np.savetxt(os.path.join(outputDir, "UE_flow_best.csv"), UEflowsBest, delimiter=",")
-
-    np.savetxt(os.path.join(outputDir, "UE_crit1and2.csv"), np.array([crit1_UE, crit2_UE], dtype=float), delimiter=",")
-    np.savetxt(
-        os.path.join(outputDir, "UE_crit1and2_best.csv"),
-        np.array([crit1_UE_Best, crit2_UE_Best], dtype=float),
-        delimiter=",",
+    save_ue_results(
+        parent_dir=parentDir,
+        UEflows=UEflows,
+        UEflowsBest=UEflowsBest,
+        crit1_UE=crit1_UE,
+        crit2_UE=crit2_UE,
+        crit1_UE_Best=crit1_UE_Best,
+        crit2_UE_Best=crit2_UE_Best,
+        L_UE=L_UE,
+        iter_UE=iter_UE,
+        LBD_UE=LBD_UE,
+        LBD_UE_Best=LBD_UE_Best,
     )
-
-    np.savetxt(os.path.join(outputDir, "UE_L.csv"), np.array([L_UE], dtype=float), delimiter=",")
-    np.savetxt(os.path.join(outputDir, "UE_L_best.csv"), np.array([iter_UE], dtype=float), delimiter=",")
-    np.savetxt(os.path.join(outputDir, "UE_LBD.csv"), np.array([LBD_UE], dtype=float), delimiter=",")
-    np.savetxt(os.path.join(outputDir, "UE_LBD_best.csv"), np.array([LBD_UE_Best], dtype=float), delimiter=",")
 
 
 if __name__ == "__main__":
