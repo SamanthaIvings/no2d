@@ -2,12 +2,12 @@ from __future__ import annotations
 
 import numpy as np
 
-from no2d.frank_wolfe.IO_operations import (
+from no2d_code.frank_wolfe.IO_operations import (
     load_edges, load_nodes, load_od_list, load_demand,
     init_ue_logs, save_ue_results
 )
-from no2d.frank_wolfe.frankwolfe_ue_flex import FrankWolfe_UE_Flex
-from no2d.frank_wolfe.shortestpathtree import Digraph
+from no2d_code.frank_wolfe.frankwolfe_ue_flex import FrankWolfe_UE_Flex
+from no2d_code.frank_wolfe.shortestpathtree import Digraph
 
 
 def TA_UE(

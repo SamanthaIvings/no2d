@@ -6,7 +6,7 @@ from typing import Tuple
 import numpy as np
 import pandas as pd
 
-from no2d.frank_wolfe.filenames import (
+from no2d_code.frank_wolfe.filenames import (
     EDGES_CSV,
     NODES_CSV,
     DEMAND_CSV,

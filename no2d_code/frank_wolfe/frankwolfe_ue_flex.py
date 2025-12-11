@@ -6,9 +6,9 @@ from datetime import datetime
 import numpy as np
 from scipy.optimize import minimize_scalar
 
-from no2d.frank_wolfe.beckmann import beckmann_min_ue
-from no2d.frank_wolfe.bpr import bpr_density_smooth
-from no2d.frank_wolfe.shortestpathtree import shortestpathtree_edges_cell, Digraph
+from no2d_code.frank_wolfe.beckmann import beckmann_min_ue
+from no2d_code.frank_wolfe.bpr import bpr_density_smooth
+from no2d_code.frank_wolfe.shortestpathtree import shortestpathtree_edges_cell, Digraph
 
 
 def FrankWolfe_UE_Flex(
