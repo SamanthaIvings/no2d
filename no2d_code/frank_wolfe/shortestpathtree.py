@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from typing import List, Tuple
 
 import numpy as np
+import pandas as pd
 from numpy.typing import NDArray
 
 
@@ -25,26 +26,18 @@ class Digraph:
     bpr_params: NDArray[np.float64]
 
     @classmethod
-    def from_edge_arrays(
-        cls,
-        *,
-        u: NDArray[np.int64],
-        v: NDArray[np.int64],
-        length_m: NDArray[np.float64],
-        speedlimit_kmh: NDArray[np.float64],
-        capacity: NDArray[np.float64],
-        critical_density: NDArray[np.float64],
-        n_nodes: int,
-        weight: NDArray[np.float64],
-        bpr_params: NDArray[np.float64] | None = None,
-    ) -> "Digraph":
-        u = np.asarray(u, dtype=np.int64)
-        v = np.asarray(v, dtype=np.int64)
-        length_m = np.asarray(length_m, dtype=float)
-        speedlimit_kmh = np.asarray(speedlimit_kmh, dtype=float)
-        capacity = np.asarray(capacity, dtype=float)
-        critical_density = np.asarray(critical_density, dtype=float)
-        weight = np.asarray(weight, dtype=float)
+    def from_edges(cls, edges: pd.DataFrame) -> "Digraph":
+        u = edges["u"].to_numpy(dtype=int)
+        v = edges["v"].to_numpy(dtype=int)
+
+        length_m = edges["length"].to_numpy(dtype=float)
+        speedlimit_kmh = edges["speedlim"].to_numpy(dtype=float)
+        capacity = edges["capacity"].to_numpy(dtype=float)
+        critical_density = edges["criticalDensity"].to_numpy(dtype=float)
+
+        n_nodes = int(max(u.max(), v.max()) + 1)
+
+        bpr_params = np.tile([0.15, 4.0, 0.0], (edges.shape[0], 1))
 
         distance_km = length_m / 1000.0
         free_flow_travel_h = distance_km / speedlimit_kmh
@@ -56,7 +49,7 @@ class Digraph:
         return cls(
             u=u,
             v=v,
-            weight=weight,
+            weight=length_m,
             n_nodes=int(n_nodes),
             adj=adj,
             capacity=capacity,
