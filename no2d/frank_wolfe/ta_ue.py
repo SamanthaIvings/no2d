@@ -6,8 +6,8 @@ from datetime import datetime
 import numpy as np
 import pandas as pd
 
-from code.frank_wolfe import FrankWolfe_UE_Flex
-from code.frank_wolfe.shortestpathtree import Digraph
+from no2d.frank_wolfe.frankwolfe_ue_flex import FrankWolfe_UE_Flex
+from no2d.frank_wolfe.shortestpathtree import Digraph
 
 
 def TA_UE(
@@ -43,7 +43,7 @@ def TA_UE(
         capacity=capacity,
         critical_density=criticalDensity,
         n_nodes=n_nodes,
-        weight=length_m,
+        weight=length_m
     )
 
     roadClass = np.empty(edges.shape[0], dtype=object)
