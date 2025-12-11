@@ -14,7 +14,7 @@ from no2d_code.frank_wolfe.shortestpathtree import shortestpathtree_edges_cell, 
 def FrankWolfe_UE_Flex(
     demand: np.ndarray,
     graph: Digraph,
-    OD_list: np.ndarray,
+    origin_destination: np.ndarray,
     config: FWRunConfig,
 ) -> FWResult:
     time = graph.free_flow_travel_h
@@ -44,9 +44,9 @@ def FrankWolfe_UE_Flex(
             E_store = [None] * graph.n_nodes
         E_store[i] = E
 
-    for i in range(OD_list.shape[0]):
-        s = int(OD_list[i, 2])
-        t = int(OD_list[i, 3])
+    for i in range(origin_destination.shape[0]):
+        s = int(origin_destination[i, 2])
+        t = int(origin_destination[i, 3])
         E1 = E_store[s]
         edgepath = E1[t]
         if edgepath:
@@ -76,7 +76,7 @@ def FrankWolfe_UE_Flex(
         L = L + 1
 
         if L == stepbreak:
-            Xa_Gi = np.zeros((flow.size, OD_list.shape[0]), dtype=float)
+            Xa_Gi = np.zeros((flow.size, origin_destination.shape[0]), dtype=float)
 
             for i in range(graph.n_nodes):
                 E = shortestpathtree_edges_cell(graph, i)
@@ -84,9 +84,9 @@ def FrankWolfe_UE_Flex(
                     E_store = [None] * graph.n_nodes
                 E_store[i] = E
 
-            for i in range(OD_list.shape[0]):
-                s = int(OD_list[i, 2])
-                t = int(OD_list[i, 3])
+            for i in range(origin_destination.shape[0]):
+                s = int(origin_destination[i, 2])
+                t = int(origin_destination[i, 3])
                 E1 = E_store[s]
                 edgepath = E1[t]
                 if edgepath:
@@ -96,7 +96,7 @@ def FrankWolfe_UE_Flex(
             break
 
         flow_y = np.zeros(flow.size, dtype=float)
-        Xa_Gi = np.zeros((flow.size, OD_list.shape[0]), dtype=float)
+        Xa_Gi = np.zeros((flow.size, origin_destination.shape[0]), dtype=float)
 
         for i in range(graph.n_nodes):
             E = shortestpathtree_edges_cell(graph, i)
@@ -104,9 +104,9 @@ def FrankWolfe_UE_Flex(
                 E_store = [None] * graph.n_nodes
             E_store[i] = E
 
-        for i in range(OD_list.shape[0]):
-            s = int(OD_list[i, 2])
-            t = int(OD_list[i, 3])
+        for i in range(origin_destination.shape[0]):
+            s = int(origin_destination[i, 2])
+            t = int(origin_destination[i, 3])
             E1 = E_store[s]
             edgepath = E1[t]
 
@@ -179,7 +179,7 @@ def FrankWolfe_UE_Flex(
             np.savetxt(critBestsName, critBests, delimiter=",")
 
         if abs(crit2) < eps:
-            Xa_Gi = np.zeros((flow.size, OD_list.shape[0]), dtype=float)
+            Xa_Gi = np.zeros((flow.size, origin_destination.shape[0]), dtype=float)
 
             for i in range(graph.n_nodes):
                 E = shortestpathtree_edges_cell(graph, i)
@@ -187,9 +187,9 @@ def FrankWolfe_UE_Flex(
                     E_store = [None] * graph.n_nodes
                 E_store[i] = E
 
-            for i in range(OD_list.shape[0]):
-                s = int(OD_list[i, 2])
-                t = int(OD_list[i, 3])
+            for i in range(origin_destination.shape[0]):
+                s = int(origin_destination[i, 2])
+                t = int(origin_destination[i, 3])
                 E1 = E_store[s]
                 edgepath = E1[t]
                 if edgepath:

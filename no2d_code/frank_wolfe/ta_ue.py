@@ -3,10 +3,7 @@ from __future__ import annotations
 import numpy as np
 
 from no2d_code.frank_wolfe import FrankWolfe_UE_Flex
-from no2d_code.frank_wolfe.IO_operations import (
-    load_edges, load_od_list, load_demand,
-    init_ue_logs, save_ue_results,
-)
+from no2d_code.frank_wolfe.IO_operations import load_edges, load_filtered_od_and_demand, init_ue_logs, save_ue_results
 from no2d_code.frank_wolfe.frank_wolfe_classes import FWResult, FWRunConfig
 from no2d_code.frank_wolfe.shortestpathtree import Digraph
 
@@ -16,17 +13,11 @@ def find_transport_assignment_user_equilibrium(tol: float = 58.6, parentDir: str
     graph = Digraph.from_edges(edges)
 
     TimeBinPeriods = ["DAY"]
-
     steplimit = 125000
 
+    origin_destination, demand = load_filtered_od_and_demand(parentDir, tol)
+
     txtName, critLogName, critBestsName = init_ue_logs(parentDir, steplimit)
-
-    OD_list = load_od_list(parentDir, tol)
-    demand = load_demand(parentDir)
-
-    inds = np.where(OD_list[:, 0] == OD_list[:, 1])[0]
-    OD_list = np.delete(OD_list, inds, axis=0)
-    demand = np.delete(demand, inds, axis=0)
 
     run_cfg = FWRunConfig(
         eps=1e-5,
@@ -47,7 +38,7 @@ def find_transport_assignment_user_equilibrium(tol: float = 58.6, parentDir: str
         result = FrankWolfe_UE_Flex(
             demand=demand,
             graph=graph,
-            OD_list=OD_list,
+            origin_destination=origin_destination,
             config=run_cfg,
         )
 

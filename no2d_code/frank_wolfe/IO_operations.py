@@ -1,3 +1,5 @@
+# no2d_code/frank_wolfe/IO_operations.py
+
 from __future__ import annotations
 
 from datetime import datetime
@@ -9,7 +11,6 @@ import pandas as pd
 
 from no2d_code.frank_wolfe.filepath_configs import (
     EDGES_CSV,
-    NODES_CSV,
     DEMAND_CSV,
     od_list_filename,
     OUT_LOG_TXT,
@@ -28,15 +29,11 @@ from no2d_code.frank_wolfe.filepath_configs import (
     outputs_dir,
     log_path,
 )
-from no2d_code.frank_wolfe.frankwolfe_ue_flex import FWResult
+from no2d_code.frank_wolfe.frank_wolfe_classes import FWResult
 
 
 def load_edges(parent_dir: str) -> pd.DataFrame:
     return pd.read_csv(input_path(parent_dir, EDGES_CSV))
-
-
-def load_nodes(parent_dir: str) -> pd.DataFrame:
-    return pd.read_csv(input_path(parent_dir, NODES_CSV))
 
 
 def load_od_list(parent_dir: str, tol: float) -> np.ndarray:
@@ -46,6 +43,18 @@ def load_od_list(parent_dir: str, tol: float) -> np.ndarray:
 
 def load_demand(parent_dir: str) -> np.ndarray:
     return np.loadtxt(input_path(parent_dir, DEMAND_CSV), delimiter=",", skiprows=1)
+
+
+def load_filtered_od_and_demand(parent_dir: str, tol: float) -> tuple[np.ndarray, np.ndarray]:
+    OD_list = load_od_list(parent_dir, tol)
+    demand = load_demand(parent_dir)
+
+    inds = np.where(OD_list[:, 0] == OD_list[:, 1])[0]
+    if inds.size > 0:
+        OD_list = np.delete(OD_list, inds, axis=0)
+        demand = np.delete(demand, inds, axis=0)
+
+    return OD_list, demand
 
 
 def init_ue_logs(parent_dir: str, steplimit: int) -> Tuple[str, str, str]:
@@ -78,16 +87,8 @@ def save_ue_results(
 ) -> None:
     os.makedirs(outputs_dir(parent_dir), exist_ok=True)
 
-    np.savetxt(
-        output_path(parent_dir, UE_FLOW_CSV),
-        UEflows,
-        delimiter=",",
-    )
-    np.savetxt(
-        output_path(parent_dir, UE_FLOW_BEST_CSV),
-        UEflowsBest,
-        delimiter=",",
-    )
+    np.savetxt(output_path(parent_dir, UE_FLOW_CSV), UEflows, delimiter=",")
+    np.savetxt(output_path(parent_dir, UE_FLOW_BEST_CSV), UEflowsBest, delimiter=",")
 
     np.savetxt(
         output_path(parent_dir, UE_CRIT_CSV),
