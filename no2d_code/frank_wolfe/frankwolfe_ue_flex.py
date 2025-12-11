@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from typing import Tuple
 from datetime import datetime
 
 import numpy as np
@@ -8,39 +7,41 @@ from scipy.optimize import minimize_scalar
 
 from no2d_code.frank_wolfe.beckmann import beckmann_min_ue
 from no2d_code.frank_wolfe.bpr import bpr_density_smooth
+from no2d_code.frank_wolfe.frank_wolfe_classes import FWRunConfig, FWResult
 from no2d_code.frank_wolfe.shortestpathtree import shortestpathtree_edges_cell, Digraph
 
 
 def FrankWolfe_UE_Flex(
     demand: np.ndarray,
-    time: np.ndarray,
-    topo_graph: Digraph,
+    graph: Digraph,
     OD_list: np.ndarray,
-    eps: float,
-    capacity: np.ndarray,
-    criticalDensity: np.ndarray,
-    params: np.ndarray,
-    stepbreak: int,
-    txtName: str,
-    critLogName: str,
-    critBestsName: str,
-) -> Tuple[
-    np.ndarray, float, float, int, np.ndarray, np.ndarray, np.ndarray, np.ndarray, float, float, int, float, float
-]:
-    topo_graph_input = topo_graph
+    config: FWRunConfig,
+) -> FWResult:
+    time = graph.free_flow_travel_h
+    capacity = graph.capacity
+    criticalDensity = graph.critical_density
+    params = graph.bpr_params
+    if params is None:
+        raise ValueError("Digraph.bpr_params must be set before calling FrankWolfe_UE_Flex.")
 
-    flow0 = np.zeros(topo_graph_input.u.size, dtype=float)
+    eps = config.eps
+    stepbreak = config.stepbreak
+    txtName = config.txt_name
+    critLogName = config.crit_log_name
+    critBestsName = config.crit_bests_name
+
+    flow0 = np.zeros(graph.u.size, dtype=float)
     density0 = flow0 * criticalDensity / capacity
-    traveltime0 = bpr_density_smooth(time, density0, criticalDensity, params)
+    traveltime0 = bpr_density_smooth(graph.free_flow_travel_h, density0, criticalDensity, params)
 
-    topo_graph_input.weight = traveltime0
+    graph.weight = traveltime0
 
     flow = flow0.copy()
 
-    for i in range(topo_graph_input.n_nodes):
-        E = shortestpathtree_edges_cell(topo_graph_input, i)
+    for i in range(graph.n_nodes):
+        E = shortestpathtree_edges_cell(graph, i)
         if i == 0:
-            E_store = [None] * topo_graph_input.n_nodes
+            E_store = [None] * graph.n_nodes
         E_store[i] = E
 
     for i in range(OD_list.shape[0]):
@@ -66,7 +67,7 @@ def FrankWolfe_UE_Flex(
     density = flow * criticalDensity / capacity
 
     traveltime = bpr_density_smooth(time, density, criticalDensity, params)
-    topo_graph_input.weight = traveltime
+    graph.weight = traveltime
 
     critLog = np.loadtxt(critLogName, delimiter=",")
     critBests = np.loadtxt(critBestsName, delimiter=",")
@@ -77,10 +78,10 @@ def FrankWolfe_UE_Flex(
         if L == stepbreak:
             Xa_Gi = np.zeros((flow.size, OD_list.shape[0]), dtype=float)
 
-            for i in range(topo_graph_input.n_nodes):
-                E = shortestpathtree_edges_cell(topo_graph_input, i)
+            for i in range(graph.n_nodes):
+                E = shortestpathtree_edges_cell(graph, i)
                 if i == 0:
-                    E_store = [None] * topo_graph_input.n_nodes
+                    E_store = [None] * graph.n_nodes
                 E_store[i] = E
 
             for i in range(OD_list.shape[0]):
@@ -97,10 +98,10 @@ def FrankWolfe_UE_Flex(
         flow_y = np.zeros(flow.size, dtype=float)
         Xa_Gi = np.zeros((flow.size, OD_list.shape[0]), dtype=float)
 
-        for i in range(topo_graph_input.n_nodes):
-            E = shortestpathtree_edges_cell(topo_graph_input, i)
+        for i in range(graph.n_nodes):
+            E = shortestpathtree_edges_cell(graph, i)
             if i == 0:
-                E_store = [None] * topo_graph_input.n_nodes
+                E_store = [None] * graph.n_nodes
             E_store[i] = E
 
         for i in range(OD_list.shape[0]):
@@ -134,7 +135,9 @@ def FrankWolfe_UE_Flex(
             LBDBest = LBD
             if critBests.ndim == 1:
                 critBests = critBests.reshape(1, -1)
-            critBests = np.vstack([critBests, np.array([crit1Best, crit2Best, iter_best], dtype=float)])
+            critBests = np.vstack(
+                [critBests, np.array([crit1Best, crit2Best, iter_best], dtype=float)]
+            )
             np.savetxt(critBestsName, critBests, delimiter=",")
 
         if abs(crit1) < eps:
@@ -152,7 +155,7 @@ def FrankWolfe_UE_Flex(
         density = density + step_new * density_p
 
         traveltime = bpr_density_smooth(time, density, criticalDensity, params)
-        topo_graph_input.weight = traveltime
+        graph.weight = traveltime
 
         T_new = float(np.dot(flow, traveltime))
         crit2 = abs(T_new - LBD) / LBD
@@ -170,16 +173,18 @@ def FrankWolfe_UE_Flex(
             LBDBest = LBD
             if critBests.ndim == 1:
                 critBests = critBests.reshape(1, -1)
-            critBests = np.vstack([critBests, np.array([crit1Best, crit2Best, iter_best], dtype=float)])
+            critBests = np.vstack(
+                [critBests, np.array([crit1Best, crit2Best, iter_best], dtype=float)]
+            )
             np.savetxt(critBestsName, critBests, delimiter=",")
 
         if abs(crit2) < eps:
             Xa_Gi = np.zeros((flow.size, OD_list.shape[0]), dtype=float)
 
-            for i in range(topo_graph_input.n_nodes):
-                E = shortestpathtree_edges_cell(topo_graph_input, i)
+            for i in range(graph.n_nodes):
+                E = shortestpathtree_edges_cell(graph, i)
                 if i == 0:
-                    E_store = [None] * topo_graph_input.n_nodes
+                    E_store = [None] * graph.n_nodes
                 E_store[i] = E
 
             for i in range(OD_list.shape[0]):
@@ -203,18 +208,18 @@ def FrankWolfe_UE_Flex(
         critLog[L, :] = np.array([crit1, crit2], dtype=float)
         np.savetxt(critLogName, critLog, delimiter=",")
 
-    return (
-        UEflows,
-        float(crit1),
-        float(crit2),
-        int(L),
-        Xa_Gi,
-        critLog,
-        critBests,
-        UEflowsBest,
-        float(crit1Best),
-        float(crit2Best),
-        int(iter_best),
-        float(LBD),
-        float(LBDBest),
+    return FWResult(
+        flows=UEflows,
+        flows_best=UEflowsBest,
+        crit1=float(crit1),
+        crit2=float(crit2),
+        crit1_best=float(crit1Best),
+        crit2_best=float(crit2Best),
+        iterations=int(L),
+        iter_best=int(iter_best),
+        Xa_Gi=Xa_Gi,
+        crit_log=critLog,
+        crit_bests=critBests,
+        LBD=float(LBD),
+        LBD_best=float(LBDBest),
     )

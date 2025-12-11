@@ -22,6 +22,8 @@ class Digraph:
     speedlimit_kmh: NDArray[np.float64]
     free_flow_travel_h: NDArray[np.float64]
 
+    bpr_params: NDArray[np.float64]
+
     @classmethod
     def from_edge_arrays(
         cls,
@@ -34,6 +36,7 @@ class Digraph:
         critical_density: NDArray[np.float64],
         n_nodes: int,
         weight: NDArray[np.float64],
+        bpr_params: NDArray[np.float64] | None = None,
     ) -> "Digraph":
         u = np.asarray(u, dtype=np.int64)
         v = np.asarray(v, dtype=np.int64)
@@ -61,6 +64,7 @@ class Digraph:
             distance_km=distance_km,
             speedlimit_kmh=speedlimit_kmh,
             free_flow_travel_h=free_flow_travel_h,
+            bpr_params=bpr_params
         )
 
 

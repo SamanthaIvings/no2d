@@ -2,11 +2,12 @@ from __future__ import annotations
 
 from datetime import datetime
 from typing import Tuple
+import os
 
 import numpy as np
 import pandas as pd
 
-from no2d_code.frank_wolfe.filenames import (
+from no2d_code.frank_wolfe.filepath_configs import (
     EDGES_CSV,
     NODES_CSV,
     DEMAND_CSV,
@@ -27,8 +28,7 @@ from no2d_code.frank_wolfe.filenames import (
     outputs_dir,
     log_path,
 )
-import os
-import numpy as np
+from no2d_code.frank_wolfe.frankwolfe_ue_flex import FWResult
 
 
 def load_edges(parent_dir: str) -> pd.DataFrame:
@@ -74,14 +74,7 @@ def save_ue_results(
     parent_dir: str,
     UEflows: np.ndarray,
     UEflowsBest: np.ndarray,
-    crit1_UE: float,
-    crit2_UE: float,
-    crit1_UE_Best: float,
-    crit2_UE_Best: float,
-    L_UE: float,
-    iter_UE: int,
-    LBD_UE: float,
-    LBD_UE_Best: float,
+    result: FWResult,
 ) -> None:
     os.makedirs(outputs_dir(parent_dir), exist_ok=True)
 
@@ -98,32 +91,32 @@ def save_ue_results(
 
     np.savetxt(
         output_path(parent_dir, UE_CRIT_CSV),
-        np.array([crit1_UE, crit2_UE], dtype=float),
+        np.array([result.crit1, result.crit2], dtype=float),
         delimiter=",",
     )
     np.savetxt(
         output_path(parent_dir, UE_CRIT_BEST_CSV),
-        np.array([crit1_UE_Best, crit2_UE_Best], dtype=float),
+        np.array([result.crit1_best, result.crit2_best], dtype=float),
         delimiter=",",
     )
 
     np.savetxt(
         output_path(parent_dir, UE_L_CSV),
-        np.array([L_UE], dtype=float),
+        np.array([result.iterations], dtype=float),
         delimiter=",",
     )
     np.savetxt(
         output_path(parent_dir, UE_L_BEST_CSV),
-        np.array([iter_UE], dtype=float),
+        np.array([result.iter_best], dtype=float),
         delimiter=",",
     )
     np.savetxt(
         output_path(parent_dir, UE_LBD_CSV),
-        np.array([LBD_UE], dtype=float),
+        np.array([result.LBD], dtype=float),
         delimiter=",",
     )
     np.savetxt(
         output_path(parent_dir, UE_LBD_BEST_CSV),
-        np.array([LBD_UE_Best], dtype=float),
+        np.array([result.LBD_best], dtype=float),
         delimiter=",",
     )
