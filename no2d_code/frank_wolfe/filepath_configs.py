@@ -20,15 +20,7 @@ OUT_LOG_TXT = "Out_TA_HPC_UE.txt"
 ALL_CRIT_CSV = "All_crit1_crit2_UE.csv"
 BEST_CRIT_CSV = "Best_crit1_crit2_UE.csv"
 
-# main outputs (stored in outputs subfolder)
-UE_FLOW_CSV = "UE_flow.csv"
-UE_FLOW_BEST_CSV = "UE_flow_best.csv"
-UE_CRIT_CSV = "UE_crit1and2.csv"
-UE_CRIT_BEST_CSV = "UE_crit1and2_best.csv"
-UE_L_CSV = "UE_L.csv"
-UE_L_BEST_CSV = "UE_L_best.csv"
-UE_LBD_CSV = "UE_LBD.csv"
-UE_LBD_BEST_CSV = "UE_LBD_best.csv"
+UE_RESULTS_FILE = "ue_results.npz"
 
 
 def join(*parts: str) -> str:

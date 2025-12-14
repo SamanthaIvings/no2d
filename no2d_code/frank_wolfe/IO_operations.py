@@ -1,5 +1,3 @@
-# no2d_code/frank_wolfe/IO_operations.py
-
 from __future__ import annotations
 
 from datetime import datetime
@@ -16,18 +14,11 @@ from no2d_code.frank_wolfe.filepath_configs import (
     OUT_LOG_TXT,
     ALL_CRIT_CSV,
     BEST_CRIT_CSV,
-    UE_FLOW_CSV,
-    UE_FLOW_BEST_CSV,
-    UE_CRIT_CSV,
-    UE_CRIT_BEST_CSV,
-    UE_L_CSV,
-    UE_L_BEST_CSV,
-    UE_LBD_CSV,
-    UE_LBD_BEST_CSV,
     input_path,
     output_path,
     outputs_dir,
     log_path,
+    UE_RESULTS_FILE,
 )
 from no2d_code.frank_wolfe.frank_wolfe_classes import FWResult
 
@@ -83,41 +74,18 @@ def save_ue_results(
     parent_dir: str,
     UEflows: np.ndarray,
     UEflowsBest: np.ndarray,
-    result: FWResult,
-) -> None:
+    result: "FWResult"):
     os.makedirs(outputs_dir(parent_dir), exist_ok=True)
 
-    np.savetxt(output_path(parent_dir, UE_FLOW_CSV), UEflows, delimiter=",")
-    np.savetxt(output_path(parent_dir, UE_FLOW_BEST_CSV), UEflowsBest, delimiter=",")
-
-    np.savetxt(
-        output_path(parent_dir, UE_CRIT_CSV),
-        np.array([result.crit1, result.crit2], dtype=float),
-        delimiter=",",
-    )
-    np.savetxt(
-        output_path(parent_dir, UE_CRIT_BEST_CSV),
-        np.array([result.crit1_best, result.crit2_best], dtype=float),
-        delimiter=",",
-    )
-
-    np.savetxt(
-        output_path(parent_dir, UE_L_CSV),
-        np.array([result.iterations], dtype=float),
-        delimiter=",",
-    )
-    np.savetxt(
-        output_path(parent_dir, UE_L_BEST_CSV),
-        np.array([result.iter_best], dtype=float),
-        delimiter=",",
-    )
-    np.savetxt(
-        output_path(parent_dir, UE_LBD_CSV),
-        np.array([result.LBD], dtype=float),
-        delimiter=",",
-    )
-    np.savetxt(
-        output_path(parent_dir, UE_LBD_BEST_CSV),
-        np.array([result.LBD_best], dtype=float),
-        delimiter=",",
+    path = output_path(parent_dir, UE_RESULTS_FILE)
+    np.savez_compressed(
+        path,
+        UEflows=np.asarray(UEflows),
+        UEflowsBest=np.asarray(UEflowsBest),
+        crit=np.array([result.crit1, result.crit2], dtype=np.float64),
+        crit_best=np.array([result.crit1_best, result.crit2_best], dtype=np.float64),
+        L=np.array([result.iterations], dtype=np.int64),
+        L_best=np.array([result.iter_best], dtype=np.int64),
+        LBD=np.array([result.LBD], dtype=np.float64),
+        LBD_best=np.array([result.LBD_best], dtype=np.float64),
     )
