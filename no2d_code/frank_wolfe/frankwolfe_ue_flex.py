@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import datetime
 
 import numpy as np
@@ -8,7 +9,82 @@ from scipy.optimize import minimize_scalar
 from no2d_code.frank_wolfe.beckmann import beckmann_min_ue
 from no2d_code.frank_wolfe.bpr import bpr_density_smooth
 from no2d_code.frank_wolfe.frank_wolfe_classes import FWRunConfig, FWResult
-from no2d_code.frank_wolfe.shortestpathtree import shortestpathtree_edges_cell, Digraph
+from no2d_code.frank_wolfe.shortestpathtree import (
+    Digraph,
+    SPTWorkspace,
+    spt_predecessors,
+    aon_flow_from_tree,
+    write_xagi_from_tree,
+)
+
+
+@dataclass(frozen=True)
+class ODGrouped:
+    origins: np.ndarray
+    start: np.ndarray
+    dests: np.ndarray
+    demands: np.ndarray
+    cols: np.ndarray
+
+
+def _group_od_by_origin(origin_destination: np.ndarray, demand: np.ndarray) -> ODGrouped:
+    s = origin_destination[:, 2].astype(np.int64, copy=False)
+    t = origin_destination[:, 3].astype(np.int64, copy=False)
+    q = demand.astype(np.float64, copy=False)
+    cols = np.arange(s.size, dtype=np.int64)
+
+    order = np.argsort(s, kind="mergesort")
+    s = s[order]
+    t = t[order]
+    q = q[order]
+    cols = cols[order]
+
+    uniq, start = np.unique(s, return_index=True)
+    start = np.append(start, s.size).astype(np.int64, copy=False)
+
+    return ODGrouped(origins=uniq, start=start, dests=t, demands=q, cols=cols)
+
+
+def _aon_flow_all(
+    graph: Digraph,
+    od: ODGrouped,
+    edge_cost: np.ndarray,
+    ws: SPTWorkspace,
+) -> np.ndarray:
+    flow_y = np.zeros(edge_cost.size, dtype=np.float64)
+
+    for k in range(od.origins.size):
+        origin = int(od.origins[k])
+        a = int(od.start[k])
+        b = int(od.start[k + 1])
+
+        ws.node_demand.fill(0.0)
+        np.add.at(ws.node_demand, od.dests[a:b], od.demands[a:b])
+
+        dist, pred_node, pred_edge = spt_predecessors(graph, origin, edge_cost=edge_cost, ws=ws)
+        aon_flow_from_tree(origin, dist, pred_node, pred_edge, ws.node_demand, ws.edge_flow)
+        flow_y += ws.edge_flow
+
+    return flow_y
+
+
+def _build_xagi(
+    graph: Digraph,
+    od: ODGrouped,
+    edge_cost: np.ndarray,
+    ws: SPTWorkspace,
+) -> np.ndarray:
+    Xa_Gi = np.zeros((edge_cost.size, od.cols.size), dtype=np.float64)
+
+    for k in range(od.origins.size):
+        origin = int(od.origins[k])
+        a = int(od.start[k])
+        b = int(od.start[k + 1])
+
+        _, pred_node, pred_edge = spt_predecessors(graph, origin, edge_cost=edge_cost, ws=ws)
+        write_xagi_from_tree(origin, pred_node, pred_edge, od.dests[a:b], od.cols[a:b], Xa_Gi)
+
+    return Xa_Gi
 
 
 def FrankWolfe_UE_Flex(
@@ -30,27 +106,14 @@ def FrankWolfe_UE_Flex(
     critLogName = config.crit_log_name
     critBestsName = config.crit_bests_name
 
-    flow0 = np.zeros(graph.u.size, dtype=float)
+    od = _group_od_by_origin(origin_destination, demand)
+    ws = SPTWorkspace.create(graph.n_nodes, graph.u.size)
+
+    flow0 = np.zeros(graph.u.size, dtype=np.float64)
     density0 = flow0 * criticalDensity / capacity
-    traveltime0 = bpr_density_smooth(graph.free_flow_travel_h, density0, criticalDensity, params)
+    traveltime0 = bpr_density_smooth(time, density0, criticalDensity, params)
 
-    graph.weight = traveltime0
-
-    flow = flow0.copy()
-
-    for i in range(graph.n_nodes):
-        E = shortestpathtree_edges_cell(graph, i)
-        if i == 0:
-            E_store = [None] * graph.n_nodes
-        E_store[i] = E
-
-    for i in range(origin_destination.shape[0]):
-        s = int(origin_destination[i, 2])
-        t = int(origin_destination[i, 3])
-        E1 = E_store[s]
-        edgepath = E1[t]
-        if edgepath:
-            flow[np.asarray(edgepath, dtype=int)] += float(demand[i])
+    flow = _aon_flow_all(graph, od, traveltime0, ws)
 
     LBD = 0.0
     L = 0
@@ -65,55 +128,22 @@ def FrankWolfe_UE_Flex(
     LBDBest = LBD
 
     density = flow * criticalDensity / capacity
-
     traveltime = bpr_density_smooth(time, density, criticalDensity, params)
-    graph.weight = traveltime
 
     critLog = np.loadtxt(critLogName, delimiter=",")
     critBests = np.loadtxt(critBestsName, delimiter=",")
 
+    Xa_Gi = np.zeros((flow.size, origin_destination.shape[0]), dtype=np.float64)
+
     while abs(crit1) > eps or abs(crit2) > eps:
-        L = L + 1
+        L += 1
 
         if L == stepbreak:
-            Xa_Gi = np.zeros((flow.size, origin_destination.shape[0]), dtype=float)
-
-            for i in range(graph.n_nodes):
-                E = shortestpathtree_edges_cell(graph, i)
-                if i == 0:
-                    E_store = [None] * graph.n_nodes
-                E_store[i] = E
-
-            for i in range(origin_destination.shape[0]):
-                s = int(origin_destination[i, 2])
-                t = int(origin_destination[i, 3])
-                E1 = E_store[s]
-                edgepath = E1[t]
-                if edgepath:
-                    Xa_Gi[np.asarray(edgepath, dtype=int), i] = 1.0
-
+            Xa_Gi = _build_xagi(graph, od, traveltime, ws)
             UEflows = flow.copy()
             break
 
-        flow_y = np.zeros(flow.size, dtype=float)
-        Xa_Gi = np.zeros((flow.size, origin_destination.shape[0]), dtype=float)
-
-        for i in range(graph.n_nodes):
-            E = shortestpathtree_edges_cell(graph, i)
-            if i == 0:
-                E_store = [None] * graph.n_nodes
-            E_store[i] = E
-
-        for i in range(origin_destination.shape[0]):
-            s = int(origin_destination[i, 2])
-            t = int(origin_destination[i, 3])
-            E1 = E_store[s]
-            edgepath = E1[t]
-
-            if edgepath:
-                idxs = np.asarray(edgepath, dtype=int)
-                flow_y[idxs] += float(demand[i])
-                Xa_Gi[idxs, i] = 1.0
+        flow_y = _aon_flow_all(graph, od, traveltime, ws)
 
         flow_p = flow_y - flow
         density = flow * criticalDensity / capacity
@@ -135,12 +165,11 @@ def FrankWolfe_UE_Flex(
             LBDBest = LBD
             if critBests.ndim == 1:
                 critBests = critBests.reshape(1, -1)
-            critBests = np.vstack(
-                [critBests, np.array([crit1Best, crit2Best, iter_best], dtype=float)]
-            )
+            critBests = np.vstack([critBests, np.array([crit1Best, crit2Best, iter_best], dtype=float)])
             np.savetxt(critBestsName, critBests, delimiter=",")
 
         if abs(crit1) < eps:
+            Xa_Gi = _build_xagi(graph, od, traveltime, ws)
             UEflows = flow.copy()
             critLog[L, :] = np.array([crit1, crit2], dtype=float)
             np.savetxt(critLogName, critLog, delimiter=",")
@@ -155,8 +184,6 @@ def FrankWolfe_UE_Flex(
         density = density + step_new * density_p
 
         traveltime = bpr_density_smooth(time, density, criticalDensity, params)
-        graph.weight = traveltime
-
         T_new = float(np.dot(flow, traveltime))
         crit2 = abs(T_new - LBD) / LBD
 
@@ -179,22 +206,7 @@ def FrankWolfe_UE_Flex(
             np.savetxt(critBestsName, critBests, delimiter=",")
 
         if abs(crit2) < eps:
-            Xa_Gi = np.zeros((flow.size, origin_destination.shape[0]), dtype=float)
-
-            for i in range(graph.n_nodes):
-                E = shortestpathtree_edges_cell(graph, i)
-                if i == 0:
-                    E_store = [None] * graph.n_nodes
-                E_store[i] = E
-
-            for i in range(origin_destination.shape[0]):
-                s = int(origin_destination[i, 2])
-                t = int(origin_destination[i, 3])
-                E1 = E_store[s]
-                edgepath = E1[t]
-                if edgepath:
-                    Xa_Gi[np.asarray(edgepath, dtype=int), i] = 1.0
-
+            Xa_Gi = _build_xagi(graph, od, traveltime, ws)
             UEflows = flow.copy()
             critLog[L, :] = np.array([crit1, crit2], dtype=float)
             np.savetxt(critLogName, critLog, delimiter=",")

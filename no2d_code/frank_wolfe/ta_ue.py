@@ -8,16 +8,16 @@ from no2d_code.frank_wolfe.frank_wolfe_classes import FWResult, FWRunConfig
 from no2d_code.frank_wolfe.shortestpathtree import Digraph
 
 
-def find_transport_assignment_user_equilibrium(tol: float = 58.6, parentDir: str = "../../data/"):
-    edges = load_edges(parentDir)
+def find_transport_assignment_user_equilibrium(tol: float = 58.6, parent_folder: str = "../../data/"):
+    edges = load_edges(parent_folder)
     graph = Digraph.from_edges(edges)
 
-    TimeBinPeriods = ["DAY"]
+    time_bin_period = ["DAY"]
     steplimit = 125000
 
-    origin_destination, demand = load_filtered_od_and_demand(parentDir, tol)
+    origin_destination, demand = load_filtered_od_and_demand(parent_folder, tol)
 
-    txtName, critLogName, critBestsName = init_ue_logs(parentDir, steplimit)
+    txtName, critLogName, critBestsName = init_ue_logs(parent_folder, steplimit)
 
     run_cfg = FWRunConfig(
         eps=1e-5,
@@ -31,7 +31,7 @@ def find_transport_assignment_user_equilibrium(tol: float = 58.6, parentDir: str
     UEflowsBest = []
     last_result: FWResult | None = None
 
-    for i in range(len(TimeBinPeriods)):
+    for i in range(len(time_bin_period)):
         print(f"Time bin ...{i+1}")
         print("Starting user-equilibrium Frank-Wolfe...")
 
@@ -53,7 +53,7 @@ def find_transport_assignment_user_equilibrium(tol: float = 58.6, parentDir: str
         raise RuntimeError("No Frank–Wolfe iterations were run")
 
     save_ue_results(
-        parent_dir=parentDir,
+        parent_dir=parent_folder,
         UEflows=UEflows,
         UEflowsBest=UEflowsBest,
         result=last_result,
