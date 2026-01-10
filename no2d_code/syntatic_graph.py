@@ -8,7 +8,7 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 
-from no2d_code.frank_wolfe import FrankWolfe_UE_Flex
+from no2d_code.frank_wolfe import frank_wolfe_ue_solver
 from no2d_code.frank_wolfe.frank_wolfe_classes import FWRunConfig
 from no2d_code.frank_wolfe.shortestpathtree import Digraph, shortestpathtree_edges_cell
 
@@ -212,13 +212,13 @@ def main() -> None:
 
     config = FWRunConfig(
         eps=eps,
-        stepbreak=stepbreak,
+        steplimit=stepbreak,
         txt_name=txt_name,
         crit_log_name=crit_log_name,
         crit_bests_name="",  # unused
     )
 
-    result = FrankWolfe_UE_Flex(
+    result = frank_wolfe_ue_solver(
         demand=demand,
         graph=graph,
         origin_destination=origin_destination,

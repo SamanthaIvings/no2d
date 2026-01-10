@@ -8,7 +8,7 @@ from numpy.typing import NDArray
 @dataclass
 class FWRunConfig:
     eps: float
-    stepbreak: int
+    steplimit: int
     txt_name: str
     crit_log_name: str
     crit_bests_name: str
