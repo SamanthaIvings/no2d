@@ -26,7 +26,7 @@ class Digraph:
     bpr_params: NDArray[np.float64]
 
     @classmethod
-    def from_edges(cls, edges: pd.DataFrame) -> "Digraph":
+    def from_edges(cls, edges: pd.DataFrame, eps: float) -> "Digraph":
         u = edges["u"].to_numpy(dtype=int)
         v = edges["v"].to_numpy(dtype=int)
 
@@ -37,7 +37,7 @@ class Digraph:
 
         n_nodes = int(max(u.max(), v.max()) + 1)
 
-        bpr_params = np.tile([0.15, 4.0, 0.0], (edges.shape[0], 1))
+        bpr_params = np.tile([0.15, 4.0, eps], (edges.shape[0], 1))
 
         distance_km = length_m / 1000.0
         free_flow_travel_h = distance_km / speedlimit_kmh

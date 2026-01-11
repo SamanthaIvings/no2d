@@ -2,15 +2,20 @@ from __future__ import annotations
 
 import numpy as np
 
-from no2d_code.frank_wolfe import frank_wolfe_ue_solver
+
 from no2d_code.frank_wolfe.IO_operations import load_edges, load_filtered_od_and_demand, init_ue_logs, save_ue_results
 from no2d_code.frank_wolfe.frank_wolfe_classes import FWResult, FWRunConfig
+from no2d_code.frank_wolfe.frankwolfe_ue_flex import frank_wolfe_ue_solver
 from no2d_code.frank_wolfe.shortestpathtree import Digraph
 
 
-def find_transport_assignment_user_equilibrium(tol: float = 58.6, parent_directory: str = "../../data/"):
+def find_transport_assignment_user_equilibrium(
+        tol: float = 58.6,
+        parent_directory: str = "../../data/",
+        eps: float = 1e-6
+):
     edges = load_edges(parent_directory)
-    graph = Digraph.from_edges(edges)
+    graph = Digraph.from_edges(edges, eps)
 
     time_bin_periods = ["DAY"]
     step_limit = 125000
@@ -20,7 +25,7 @@ def find_transport_assignment_user_equilibrium(tol: float = 58.6, parent_directo
     txt_name, crit_log_name, crit_bests_name = init_ue_logs(parent_directory, step_limit)
 
     run_cfg = FWRunConfig(
-        eps=1e-5,
+        eps=1e-6,
         steplimit=step_limit,
         txt_name=txt_name,
         crit_log_name=crit_log_name,
@@ -61,4 +66,6 @@ def find_transport_assignment_user_equilibrium(tol: float = 58.6, parent_directo
 
 
 if __name__ == "__main__":
-    find_transport_assignment_user_equilibrium()
+    eps = 1e-6
+
+    find_transport_assignment_user_equilibrium(eps=eps)

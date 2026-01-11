@@ -5,8 +5,8 @@ from datetime import datetime
 import numpy as np
 from scipy.optimize import minimize_scalar
 
-from no2d_code.frank_wolfe.beckmann import beckmann_user_equilibrium_minimiser
-from no2d_code.frank_wolfe.bpr import bpr_density_smooth
+from no2d_code.frank_wolfe.beckmann import beckmann_objective_ue, beckmann_line_search_objective_ue
+from no2d_code.frank_wolfe.bpr import bpr_flow
 from no2d_code.frank_wolfe.frank_wolfe_classes import FWRunConfig, FWResult
 from no2d_code.frank_wolfe.shortestpathtree import shortestpathtree_edges_cell, Digraph
 
@@ -19,15 +19,12 @@ def frank_wolfe_ue_solver(
 ) -> FWResult:
     time = graph.free_flow_travel_h
     capacity = graph.capacity
-    critical_density = graph.critical_density
     params = graph.bpr_params
 
     eps = config.eps
 
     flow0 = np.zeros(graph.u.size, dtype=float)
-    density0 = flow0 * critical_density / capacity
-    traveltime0 = bpr_density_smooth(graph.free_flow_travel_h, density0, critical_density, params)
-
+    traveltime0 = bpr_flow(graph.free_flow_travel_h, flow0, capacity, params)
     graph.weight = traveltime0
 
     flow = flow0.copy()
@@ -57,16 +54,21 @@ def frank_wolfe_ue_solver(
     iter_best = 0
     LBDBest = LBD
 
-    density = flow * critical_density / capacity
+    ratio = flow / capacity
+    print("min ratio:", float(np.min(ratio)))
+    print("count ratio < eps:", int(np.sum(ratio < params[0, 2])))
 
-    traveltime = bpr_density_smooth(time, density, critical_density, params)
+    traveltime = bpr_flow(time, flow, capacity, params)
     graph.weight = traveltime
 
     criteria_log = np.loadtxt(config.crit_log_name, delimiter=",")
     critBests = np.loadtxt(config.crit_bests_name, delimiter=",")
 
+    best_gap = float("inf")
+    prev_obj = beckmann_objective_ue(flow, time, params, capacity)
+
     step = 0
-    while abs(crit1) > eps or abs(crit2) > eps:
+    while crit1 > eps:
         step += 1
 
         if step == config.steplimit:
@@ -81,66 +83,82 @@ def frank_wolfe_ue_solver(
             t = int(origin_destination[i, 3])
             E1 = e_store[s]
             edgepath = E1[t]
-
             if edgepath:
                 indexes = np.asarray(edgepath, dtype=int)
                 flow_y[indexes] += float(demand[i])
                 xa_gi_metrics[indexes, i] = 1.0
 
         flow_p = flow_y - flow
-        density = flow * critical_density / capacity
-        density_y = flow_y * critical_density / capacity
-        density_p = density_y - density
 
-        gradT = bpr_density_smooth(time, density, critical_density, params)
-        T = float(np.dot(flow, traveltime))
-        T_Bar = T + float(np.dot(gradT, flow_p))
+        traveltime = bpr_flow(time, flow, capacity, params)
 
-        LBD = max(LBD, T_Bar)
-        crit1 = abs(T - LBD) / LBD
+        fw_gap = float(np.dot(traveltime, -flow_p))
+        if fw_gap < 0.0:
+            fw_gap = 0.0
 
-        crit1Best, crit2Best, ue_flows_best, iter_best, LBDBest, critBests = track_best_solution(
-            crit1, crit2, flow, step, LBD, crit1Best, crit2Best,
-            ue_flows_best, iter_best, LBDBest, critBests, config
-        )
+        tot_tt = float(np.dot(traveltime, flow))
+        crit1 = fw_gap / max(tot_tt, 1e-12)
 
-        if abs(crit1) < eps:
+        print(f"FW gap: {fw_gap:.6e}  rel_gap: {crit1:.6e}  tot_tt: {tot_tt:.6e}")
+
+        if crit1 < best_gap:
+            best_gap = crit1
+            ue_flows_best = flow.copy()
+            iter_best = step
+            LBDBest = LBD
+            crit1Best = crit1
+            crit2Best = crit2
+
+            critBests = np.atleast_2d(critBests)
+            critBests = np.vstack([critBests, np.array([crit1Best, crit2Best, iter_best], dtype=float)])
+            np.savetxt(config.crit_bests_name, critBests, delimiter=",")
+
+        if crit1 < eps:
+            print(f"First convergence check met: crit1={crit1:.6e}, eps={eps:.6e}, iter={step}")
             ue_flows = flow.copy()
             criteria_log[step, :] = np.array([crit1, crit2], dtype=float)
             np.savetxt(config.crit_log_name, criteria_log, delimiter=",")
-            print(f"First convergence check met, iter={step}")
             break
 
-        fun = lambda step: beckmann_user_equilibrium_minimiser(step, density, density_y, time, params, critical_density)
+        fun = lambda s: beckmann_line_search_objective_ue(s, flow, flow_y, time, params, capacity)
+
+        f0 = float(fun(0.0))
+        f1 = float(fun(1.0))
+        print(f"line search: f(0)={f0:.6e} f(1)={f1:.6e}")
+
         res = minimize_scalar(fun, bounds=(0.0, 1.0), method="bounded")
         step_new = float(res.x)
 
-        flow = flow + step_new * flow_p
-        density = density + step_new * density_p
+        f_star = float(fun(step_new))
+        print(f"line search: f(step*)={f_star:.6e}")
 
-        traveltime = bpr_density_smooth(time, density, critical_density, params)
+        ls_tol = 1e-10 * max(1.0, abs(f0))
+        if f_star > f0 + ls_tol:
+            raise RuntimeError(f"Line search did not decrease objective: f(step*)={f_star} > f(0)={f0}")
+
+        flow = flow + step_new * flow_p
+
+        ratio = flow / capacity
+        print("min ratio:", float(np.min(ratio)))
+        print("count ratio < eps:", int(np.sum(ratio < params[0, 2])))
+
+        traveltime = bpr_flow(time, flow, capacity, params)
         graph.weight = traveltime
 
-        T_new = float(np.dot(flow, traveltime))
-        crit2 = abs(T_new - LBD) / LBD
+        move_norm = float(np.linalg.norm(step_new * flow_p))
+        base_norm = max(float(np.linalg.norm(flow)), 1e-12)
+        crit2 = move_norm / base_norm
+
+        obj_new = beckmann_objective_ue(flow, time, params, capacity)
+        obj_tol = 1e-10 * max(1.0, abs(prev_obj))
+        if obj_new > prev_obj + obj_tol:
+            raise RuntimeError(f"Objective increased: {obj_new} > {prev_obj}")
+        prev_obj = obj_new
 
         print(f"Iteration: {step} Step Size: {step_new}")
         print(f"Crit1: {crit1} Crit2: {crit2}")
         print(f"Flow difference norm: {float(np.linalg.norm(flow_p))}")
         print(f"Travel Time Update: {float(np.mean(traveltime))}")
-
-        crit1Best, crit2Best, ue_flows_best, iter_best, LBDBest, critBests = track_best_solution(
-            crit1, crit2, flow, step, LBD, crit1Best, crit2Best,
-            ue_flows_best, iter_best, LBDBest, critBests, config
-        )
-
-        if abs(crit2) < eps:
-            ue_flows, xa_gi_metrics = build_edge_od_incidence_matrix(e_store, flow, graph, origin_destination)
-
-            criteria_log[step, :] = np.array([crit1, crit2], dtype=float)
-            np.savetxt(config.crit_log_name, criteria_log, delimiter=",")
-            print(f"Second convergence check met, iter={step}")
-            break
 
         if (step % 100) == 0:
             with open(config.txt_name, "a", encoding="utf-8") as f:
@@ -190,22 +208,3 @@ def build_edge_od_incidence_matrix(e_store, flow, graph, origin_destination):
 
     ue_flows = flow.copy()
     return ue_flows, xa_gi_metrics
-
-
-def track_best_solution(
-        crit1, crit2, flow, L, LBD, crit1_best, crit2_best,
-        ue_flows_best, iter_best, LBD_best, crit_bests, config
-):
-    if (crit1 <= crit1_best) and (crit2 <= crit2_best):
-        crit1_best = crit1
-        crit2_best = crit2
-        ue_flows_best = flow.copy()
-        iter_best = L
-        LBD_best = LBD
-
-        crit_bests = np.atleast_2d(crit_bests)
-        row = np.array([crit1_best, crit2_best, iter_best], dtype=float)
-        crit_bests = np.vstack([crit_bests, row])
-        np.savetxt(config.crit_bests_name, crit_bests, delimiter=",")
-
-    return crit1_best, crit2_best, ue_flows_best, iter_best, LBD_best, crit_bests
