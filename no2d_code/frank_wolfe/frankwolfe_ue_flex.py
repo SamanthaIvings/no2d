@@ -1,14 +1,119 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import datetime
+from typing import List, Tuple
 
 import numpy as np
+from numpy.typing import NDArray
 from scipy.optimize import minimize_scalar
 
 from no2d_code.frank_wolfe.beckmann import beckmann_objective_ue, beckmann_line_search_objective_ue
 from no2d_code.frank_wolfe.bpr import bpr_flow
 from no2d_code.frank_wolfe.frank_wolfe_classes import FWRunConfig, FWResult
 from no2d_code.frank_wolfe.shortestpathtree import shortestpathtree_edges_cell, Digraph
+
+
+def _build_shortest_path_trees(graph: Digraph) -> List:
+    e_store = [None] * graph.n_nodes
+    for i in range(graph.n_nodes):
+        e_store[i] = shortestpathtree_edges_cell(graph, i)
+    return e_store
+
+
+def _all_or_nothing_flow(demand, origin_destination, e_store, n_edges) -> NDArray[np.float64]:
+    flow_y = np.zeros(n_edges, dtype=float)
+    for i in range(origin_destination.shape[0]):
+        s = int(origin_destination[i, 2])
+        t = int(origin_destination[i, 3])
+        edgepath = e_store[s][t]
+        if edgepath:
+            idx = np.asarray(edgepath, dtype=int)
+            flow_y[idx] += float(demand[i])
+    return flow_y
+
+
+def _build_edge_od_incidence_matrix(origin_destination, e_store, n_edges) -> NDArray[np.float64]:
+    xa_gi = np.zeros((n_edges, origin_destination.shape[0]), dtype=float)
+    for i in range(origin_destination.shape[0]):
+        s = int(origin_destination[i, 2])
+        t = int(origin_destination[i, 3])
+        edgepath = e_store[s][t]
+        if edgepath:
+            xa_gi[np.asarray(edgepath, dtype=int), i] = 1.0
+    return xa_gi
+
+
+def _fw_gap_rel_gap_tot_tt(flow, flow_y, traveltime):
+    flow_p = flow_y - flow
+    fw_gap = float(np.dot(traveltime, -flow_p))
+    if fw_gap < 0.0:
+        fw_gap = 0.0
+    tot_tt = float(np.dot(traveltime, flow))
+    rel_gap = fw_gap / max(tot_tt, 1e-12)
+    return fw_gap, rel_gap, tot_tt
+
+
+def _run_line_search(flow, flow_y, time, params, capacity) -> Tuple[float, float]:
+    fun = lambda s: beckmann_line_search_objective_ue(s, flow, flow_y, time, params, capacity)
+    res = minimize_scalar(fun, bounds=(0.0, 1.0), method="bounded")
+    step_new = float(res.x)
+    f_star = float(fun(step_new))
+    return step_new, f_star
+
+
+@dataclass
+class FWCriteriaState:
+    config: FWRunConfig
+    criteria_log: NDArray[np.float64]
+    critBests: NDArray[np.float64]
+
+    crit1: float = float("inf")
+    crit2: float = float("inf")
+    best_gap: float = float("inf")
+
+    ue_flows_best: NDArray[np.float64] | None = None
+    iter_best: int = 0
+
+    prev_obj: float = float("nan")
+
+    def init_best(self, flow: NDArray[np.float64], prev_obj: float):
+        self.ue_flows_best = flow.copy()
+        self.prev_obj = float(prev_obj)
+        self.best_gap = float("inf")
+        self.crit1 = float("inf")
+        self.crit2 = float("inf")
+        self.iter_best = 0
+
+    def update_gap(self, rel_gap: float):
+        self.crit1 = rel_gap
+
+    def update_move(self, crit2: float):
+        self.crit2 = crit2
+
+    def update_objective(self, obj_new: float) -> float:
+        delta_obj = self.prev_obj - obj_new
+        self.prev_obj = obj_new
+        return delta_obj
+
+    def maybe_update_best(self, step: int, flow: NDArray[np.float64]):
+        if self.crit1 < self.best_gap:
+            self.best_gap = self.crit1
+            self.ue_flows_best = flow.copy()
+            self.iter_best = int(step)
+
+            self.critBests = np.atleast_2d(self.critBests)
+            self.critBests = np.vstack(
+                [self.critBests, np.array([self.best_gap, self.crit2, self.iter_best], dtype=float)]
+            )
+            np.savetxt(self.config.crit_bests_name, self.critBests, delimiter=",")
+
+    def log_step(self, step: int):
+        self.criteria_log[step, :] = np.array([self.crit1, self.crit2], dtype=float)
+        np.savetxt(self.config.crit_log_name, self.criteria_log, delimiter=",")
+
+    def converged(self) -> bool:
+        return self.crit1 <= self.config.eps
 
 
 def frank_wolfe_ue_solver(
@@ -21,190 +126,76 @@ def frank_wolfe_ue_solver(
     capacity = graph.capacity
     params = graph.bpr_params
 
-    eps = config.eps
+    criteria_log = np.loadtxt(config.crit_log_name, delimiter=",")
+    critBests = np.loadtxt(config.crit_bests_name, delimiter=",")
 
-    flow0 = np.zeros(graph.u.size, dtype=float)
-    traveltime0 = bpr_flow(graph.free_flow_travel_h, flow0, capacity, params)
-    graph.weight = traveltime0
+    state = FWCriteriaState(config=config, criteria_log=criteria_log, critBests=critBests)
 
-    flow = flow0.copy()
+    flow = np.zeros(graph.u.size, dtype=float)
+    graph.weight = bpr_flow(time, flow, capacity, params)
 
-    for i in range(graph.n_nodes):
-        E = shortestpathtree_edges_cell(graph, i)
-        if i == 0:
-            e_store = [None] * graph.n_nodes
-        e_store[i] = E
-
-    for i in range(origin_destination.shape[0]):
-        s = int(origin_destination[i, 2])
-        t = int(origin_destination[i, 3])
-        E1 = e_store[s]
-        edgepath = E1[t]
-        if edgepath:
-            flow[np.asarray(edgepath, dtype=int)] += float(demand[i])
-
-    LBD = 0.0
-
-    crit1 = float("inf")
-    crit2 = float("inf")
-
-    crit1Best = crit1
-    crit2Best = crit2
-    ue_flows_best = flow.copy()
-    iter_best = 0
-    LBDBest = LBD
-
-    ratio = flow / capacity
-    print("min ratio:", float(np.min(ratio)))
-    print("count ratio < eps:", int(np.sum(ratio < params[0, 2])))
+    e_store = _build_shortest_path_trees(graph)
+    flow = _all_or_nothing_flow(demand, origin_destination, e_store, flow.size)
 
     traveltime = bpr_flow(time, flow, capacity, params)
     graph.weight = traveltime
 
-    criteria_log = np.loadtxt(config.crit_log_name, delimiter=",")
-    critBests = np.loadtxt(config.crit_bests_name, delimiter=",")
-
-    best_gap = float("inf")
-    prev_obj = beckmann_objective_ue(flow, time, params, capacity)
+    state.init_best(flow=flow, prev_obj=beckmann_objective_ue(flow, time, params, capacity))
 
     step = 0
-    while crit1 > eps:
+    while not state.converged():
         step += 1
 
         if step == config.steplimit:
-            ue_flows, xa_gi_metrics = build_edge_od_incidence_matrix(e_store, flow, graph, origin_destination)
-            break
-
-        flow_y = np.zeros(flow.size, dtype=float)
-        e_store, xa_gi_metrics = precompute_shortest_path_trees(e_store, flow, graph, origin_destination)
-
-        for i in range(origin_destination.shape[0]):
-            s = int(origin_destination[i, 2])
-            t = int(origin_destination[i, 3])
-            E1 = e_store[s]
-            edgepath = E1[t]
-            if edgepath:
-                indexes = np.asarray(edgepath, dtype=int)
-                flow_y[indexes] += float(demand[i])
-                xa_gi_metrics[indexes, i] = 1.0
-
-        flow_p = flow_y - flow
-
-        traveltime = bpr_flow(time, flow, capacity, params)
-
-        fw_gap = float(np.dot(traveltime, -flow_p))
-        if fw_gap < 0.0:
-            fw_gap = 0.0
-
-        tot_tt = float(np.dot(traveltime, flow))
-        crit1 = fw_gap / max(tot_tt, 1e-12)
-
-        print(f"FW gap: {fw_gap:.6e}  rel_gap: {crit1:.6e}  tot_tt: {tot_tt:.6e}")
-
-        if crit1 < best_gap:
-            best_gap = crit1
-            ue_flows_best = flow.copy()
-            iter_best = step
-            LBDBest = LBD
-            crit1Best = crit1
-            crit2Best = crit2
-
-            critBests = np.atleast_2d(critBests)
-            critBests = np.vstack([critBests, np.array([crit1Best, crit2Best, iter_best], dtype=float)])
-            np.savetxt(config.crit_bests_name, critBests, delimiter=",")
-
-        if crit1 < eps:
-            print(f"First convergence check met: crit1={crit1:.6e}, eps={eps:.6e}, iter={step}")
+            xa_gi_metrics = _build_edge_od_incidence_matrix(origin_destination, e_store, flow.size)
             ue_flows = flow.copy()
-            criteria_log[step, :] = np.array([crit1, crit2], dtype=float)
-            np.savetxt(config.crit_log_name, criteria_log, delimiter=",")
             break
-
-        fun = lambda s: beckmann_line_search_objective_ue(s, flow, flow_y, time, params, capacity)
-
-        f0 = float(fun(0.0))
-        f1 = float(fun(1.0))
-        print(f"line search: f(0)={f0:.6e} f(1)={f1:.6e}")
-
-        res = minimize_scalar(fun, bounds=(0.0, 1.0), method="bounded")
-        step_new = float(res.x)
-
-        f_star = float(fun(step_new))
-        print(f"line search: f(step*)={f_star:.6e}")
-
-        ls_tol = 1e-10 * max(1.0, abs(f0))
-        if f_star > f0 + ls_tol:
-            raise RuntimeError(f"Line search did not decrease objective: f(step*)={f_star} > f(0)={f0}")
-
-        flow = flow + step_new * flow_p
-
-        ratio = flow / capacity
-        print("min ratio:", float(np.min(ratio)))
-        print("count ratio < eps:", int(np.sum(ratio < params[0, 2])))
 
         traveltime = bpr_flow(time, flow, capacity, params)
         graph.weight = traveltime
 
+        e_store = _build_shortest_path_trees(graph)
+        flow_y = _all_or_nothing_flow(demand, origin_destination, e_store, flow.size)
+        flow_p = flow_y - flow
+
+        _, rel_gap, _ = _fw_gap_rel_gap_tot_tt(flow, flow_y, traveltime)
+        state.update_gap(rel_gap)
+
+        if state.converged():
+            xa_gi_metrics = _build_edge_od_incidence_matrix(origin_destination, e_store, flow.size)
+            ue_flows = flow.copy()
+            state.log_step(step)
+            break
+
+        step_new, _ = _run_line_search(flow, flow_y, time, params, capacity)
+        flow = flow + step_new * flow_p
+
         move_norm = float(np.linalg.norm(step_new * flow_p))
         base_norm = max(float(np.linalg.norm(flow)), 1e-12)
-        crit2 = move_norm / base_norm
+        state.update_move(move_norm / base_norm)
 
         obj_new = beckmann_objective_ue(flow, time, params, capacity)
-        obj_tol = 1e-10 * max(1.0, abs(prev_obj))
-        if obj_new > prev_obj + obj_tol:
-            raise RuntimeError(f"Objective increased: {obj_new} > {prev_obj}")
-        prev_obj = obj_new
+        delta_obj = state.update_objective(obj_new)
 
-        print(f"Iteration: {step} Step Size: {step_new}")
-        print(f"Crit1: {crit1} Crit2: {crit2}")
-        print(f"Flow difference norm: {float(np.linalg.norm(flow_p))}")
-        print(f"Travel Time Update: {float(np.mean(traveltime))}")
+        state.maybe_update_best(step, flow)
+        state.log_step(step)
 
-        if (step % 100) == 0:
-            with open(config.txt_name, "a", encoding="utf-8") as f:
-                f.write(f"{datetime.now().isoformat()}: completed iteration {step}.\n")
+        print(f"iter={step}  rel_gap={state.crit1:.6e}  step={step_new:.6e}  dObj={delta_obj:.6e}")
 
-        criteria_log[step, :] = np.array([crit1, crit2], dtype=float)
-        np.savetxt(config.crit_log_name, criteria_log, delimiter=",")
+        with open(config.txt_name, "a", encoding="utf-8") as f:
+            f.write(f"{datetime.now().isoformat()}: completed iteration {step}.\n")
+
 
     return FWResult(
         flows=ue_flows,
-        flows_best=ue_flows_best,
-        crit1=float(crit1),
-        crit2=float(crit2),
-        crit1_best=float(crit1Best),
-        crit2_best=float(crit2Best),
-        iterations=int(step),
-        iter_best=int(iter_best),
+        flows_best=state.ue_flows_best if state.ue_flows_best is not None else ue_flows,
+        crit1=state.crit1,
+        crit2=state.crit2,
+        crit1_best=state.best_gap,
+        crit2_best=state.crit2,
+        iterations=step,
+        iter_best=state.iter_best,
         Xa_Gi=xa_gi_metrics,
-        crit_log=criteria_log,
-        crit_bests=critBests,
-        LBD=float(LBD),
-        LBD_best=float(LBDBest),
+        crit_log=state.criteria_log,
+        crit_bests=state.critBests
     )
-
-
-def precompute_shortest_path_trees(e_store, flow, graph, origin_destination):
-    xa_gi_metrics = np.zeros((flow.size, origin_destination.shape[0]), dtype=float)
-
-    for i in range(graph.n_nodes):
-        E = shortestpathtree_edges_cell(graph, i)
-        if i == 0:
-            e_store = [None] * graph.n_nodes
-        e_store[i] = E
-    return e_store, xa_gi_metrics
-
-
-def build_edge_od_incidence_matrix(e_store, flow, graph, origin_destination):
-    e_store, xa_gi_metrics = precompute_shortest_path_trees(e_store, flow, graph, origin_destination)
-
-    for i in range(origin_destination.shape[0]):
-        s = int(origin_destination[i, 2])
-        t = int(origin_destination[i, 3])
-        E1 = e_store[s]
-        edgepath = E1[t]
-        if edgepath:
-            xa_gi_metrics[np.asarray(edgepath, dtype=int), i] = 1.0
-
-    ue_flows = flow.copy()
-    return ue_flows, xa_gi_metrics

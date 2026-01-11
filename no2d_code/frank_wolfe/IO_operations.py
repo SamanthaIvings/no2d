@@ -85,7 +85,5 @@ def save_ue_results(
         crit=np.array([result.crit1, result.crit2], dtype=np.float64),
         crit_best=np.array([result.crit1_best, result.crit2_best], dtype=np.float64),
         L=np.array([result.iterations], dtype=np.int64),
-        L_best=np.array([result.iter_best], dtype=np.int64),
-        LBD=np.array([result.LBD], dtype=np.float64),
-        LBD_best=np.array([result.LBD_best], dtype=np.float64),
+        L_best=np.array([result.iter_best], dtype=np.int64)
     )

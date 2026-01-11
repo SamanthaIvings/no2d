@@ -27,5 +27,3 @@ class FWResult:
     Xa_Gi: NDArray[np.float64]
     crit_log: NDArray[np.float64]
     crit_bests: NDArray[np.float64]
-    LBD: float
-    LBD_best: float
