@@ -76,10 +76,13 @@ class FWCriteriaState:
     iter_best: int = 0
 
     prev_obj: float = float("nan")
+    obj_init: float = float("nan")
 
     def init_best(self, flow: NDArray[np.float64], prev_obj: float):
         self.ue_flows_best = flow.copy()
         self.prev_obj = float(prev_obj)
+        self.obj_init = float(prev_obj)
+
         self.best_gap = float("inf")
         self.crit1 = float("inf")
         self.crit2 = float("inf")
@@ -140,7 +143,10 @@ def frank_wolfe_ue_solver(
     traveltime = bpr_flow(time, flow, capacity, params)
     graph.weight = traveltime
 
-    state.init_best(flow=flow, prev_obj=beckmann_objective_ue(flow, time, params, capacity))
+    init_obj = beckmann_objective_ue(flow, time, params, capacity)
+    state.init_best(flow=flow, prev_obj=init_obj)
+
+    print(f"Objective init (AoN):  {state.obj_init:.12e}")
 
     step = 0
     while not state.converged():
@@ -185,6 +191,15 @@ def frank_wolfe_ue_solver(
         with open(config.txt_name, "a", encoding="utf-8") as f:
             f.write(f"{datetime.now().isoformat()}: completed iteration {step}.\n")
 
+    obj_final = beckmann_objective_ue(ue_flows, time, params, capacity)
+    obj_best = beckmann_objective_ue(
+        state.ue_flows_best if state.ue_flows_best is not None else ue_flows,
+        time, params, capacity
+    )
+
+    print(f"Objective final:       {obj_final:.12e}")
+    print(f"Objective improvement: {(state.obj_init - obj_final):.12e}")
+    print(f"Objective best(trk):   {obj_best:.12e}  (iter_best={state.iter_best})")
 
     return FWResult(
         flows=ue_flows,
@@ -197,5 +212,5 @@ def frank_wolfe_ue_solver(
         iter_best=state.iter_best,
         Xa_Gi=xa_gi_metrics,
         crit_log=state.criteria_log,
-        crit_bests=state.critBests
+        crit_bests=state.critBests,
     )
