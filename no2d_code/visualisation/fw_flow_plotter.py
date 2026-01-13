@@ -177,7 +177,7 @@ def plot_fw_flow_comparison(
     *,
     nodes: NodesLike,
     out_path: Optional[Union[str, Path]] = None,
-    dpi: int = 200,
+    dpi: int = 300,
     change_threshold: Optional[float] = None,
 ) -> None:
     flow_init = np.asarray(flow_init, dtype=float).reshape(-1)
@@ -265,3 +265,105 @@ def plot_fw_flow_comparison(
         fig.savefig(out_path, bbox_inches="tight")
 
     plt.close(fig)
+
+
+def plot_edge_value_comparison(
+    graph: Digraph,
+    value_init: NDArray[np.float64],
+    value_final: NDArray[np.float64],
+    *,
+    nodes: NodesLike,
+    out_path: Optional[Union[str, Path]] = None,
+    dpi: int = 300,
+    change_threshold: Optional[float] = None,
+    title_init: str = "Initial values",
+    title_final: str = "Final values",
+    cbar_label: str = "Value",
+    delta_label: str = "Value change",
+) -> None:
+    value_init = np.asarray(value_init, dtype=float).reshape(-1)
+    value_final = np.asarray(value_final, dtype=float).reshape(-1)
+
+    if value_init.size != graph.u.size or value_final.size != graph.u.size:
+        raise ValueError("value_init/value_final must have length = number of edges")
+
+    node_xy = _node_xy_from_nodes(nodes, graph.n_nodes)
+    segments = _edge_segments(graph, node_xy)
+    xlim, ylim = _xy_limits(node_xy)
+
+    vmax_val = float(np.max([np.max(value_init), np.max(value_final), 1.0]))
+    norm_val = Normalize(vmin=0.0, vmax=vmax_val)
+
+    delta = value_final - value_init
+    max_abs_delta = float(np.max(np.abs(delta))) if delta.size else 0.0
+    if max_abs_delta <= 0.0:
+        max_abs_delta = 1.0
+    norm_delta = TwoSlopeNorm(vmin=-max_abs_delta, vcenter=0.0, vmax=max_abs_delta)
+
+    if change_threshold is None:
+        change_threshold = 0.02 * max_abs_delta
+
+    lw_init = _linewidth_from_flow(value_init, vmax_val)
+    lw_final = _linewidth_from_flow(value_final, vmax_val)
+
+    fig = plt.figure(figsize=(16, 8), dpi=dpi)
+
+    gs = GridSpec(
+        2,
+        4,
+        figure=fig,
+        width_ratios=[1.0, 1.0, 0.30, 0.06],
+        height_ratios=[1.0, 1.0],
+        wspace=0.10,
+        hspace=0.18,
+    )
+
+    ax0 = fig.add_subplot(gs[0, 0])
+    ax1 = fig.add_subplot(gs[0, 1])
+    cax_val = fig.add_subplot(gs[0, 3])
+
+    ax2 = fig.add_subplot(gs[1, 0:2])
+    cax_delta = fig.add_subplot(gs[1, 3])
+
+    lc0 = _plot_edge_flow(ax0, segments, value_init, norm=norm_val, cmap="viridis", lw=lw_init, alpha=1.0)
+    _set_ax_style(ax0, title_init, xlim=xlim, ylim=ylim)
+
+    lc1 = _plot_edge_flow(ax1, segments, value_final, norm=norm_val, cmap="viridis", lw=lw_final, alpha=1.0)
+    _set_ax_style(ax1, title_final, xlim=xlim, ylim=ylim)
+
+    cb_val = fig.colorbar(lc1, cax=cax_val)
+    cb_val.set_label(cbar_label)
+
+    bg = LineCollection(segments, colors=[(0, 0, 0, 0.10)], linewidths=0.8, capstyle="round")
+    ax2.add_collection(bg)
+
+    show_mask = np.abs(delta) >= float(change_threshold)
+    seg2 = segments[show_mask]
+    delta2 = delta[show_mask]
+    lw2 = 0.8 + 2.0 * np.sqrt(np.clip(np.abs(delta2) / max_abs_delta, 0.0, 1.0))
+
+    if seg2.size:
+        lc2 = _plot_edge_flow(ax2, seg2, delta2, norm=norm_delta, cmap="BrBG", lw=lw2, alpha=1.0)
+    else:
+        lc2 = _plot_edge_flow(
+            ax2,
+            segments[:1],
+            np.zeros(1, dtype=float),
+            norm=norm_delta,
+            cmap="BrBG",
+            lw=np.array([0.0], dtype=float),
+            alpha=0.0,
+        )
+
+    _set_ax_style(ax2, f"{title_final} − {title_init}", xlim=xlim, ylim=ylim)
+
+    cb_delta = fig.colorbar(lc2, cax=cax_delta)
+    cb_delta.set_label(delta_label)
+
+    if out_path is not None:
+        out_path = Path(out_path)
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        fig.savefig(out_path, bbox_inches="tight")
+
+    plt.close(fig)
+

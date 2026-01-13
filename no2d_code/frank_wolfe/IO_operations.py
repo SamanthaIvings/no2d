@@ -1,8 +1,9 @@
 from __future__ import annotations
 
-from datetime import datetime
-from typing import Tuple
 import os
+import pickle
+from datetime import datetime
+from typing import Optional, Tuple
 
 import numpy as np
 import pandas as pd
@@ -87,3 +88,50 @@ def save_ue_results(
         L=np.array([result.iterations], dtype=np.int64),
         L_best=np.array([result.iter_best], dtype=np.int64)
     )
+
+
+def ue_cache_pickle_path(parent_dir: str, tag: str) -> str:
+    os.makedirs(outputs_dir(parent_dir), exist_ok=True)
+    return output_path(parent_dir, f"ue_cache_{tag}.pkl")
+
+
+def save_ue_cache_pickle(
+    parent_dir: str,
+    tag: str,
+    *,
+    UEflows_col: np.ndarray,
+    UEflowsBest_col: np.ndarray,
+    result: "FWResult",
+    meta: Optional[dict] = None,
+) -> None:
+    path = ue_cache_pickle_path(parent_dir, tag)
+
+    payload = {
+        "UEflows_col": np.asarray(UEflows_col),
+        "UEflowsBest_col": np.asarray(UEflowsBest_col),
+        "result": result,
+        "meta": {} if meta is None else dict(meta),
+        "created_at": datetime.now().isoformat(),
+        "tag": tag,
+    }
+
+    tmp = f"{path}.tmp"
+    with open(tmp, "wb") as f:
+        pickle.dump(payload, f, protocol=pickle.HIGHEST_PROTOCOL)
+    os.replace(tmp, path)
+
+
+def load_ue_cache_pickle(parent_dir: str, tag: str) -> tuple[np.ndarray, np.ndarray, "FWResult", dict]:
+    path = ue_cache_pickle_path(parent_dir, tag)
+    with open(path, "rb") as f:
+        payload = pickle.load(f)
+
+    UEflows_col = np.asarray(payload["UEflows_col"])
+    UEflowsBest_col = np.asarray(payload["UEflowsBest_col"])
+    result = payload["result"]
+    meta = payload.get("meta", {})
+    return UEflows_col, UEflowsBest_col, result, meta
+
+
+def has_ue_cache_pickle(parent_dir: str, tag: str) -> bool:
+    return os.path.exists(ue_cache_pickle_path(parent_dir, tag))

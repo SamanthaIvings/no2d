@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import List, Optional, Tuple
+from typing import List, Optional
 
 import numpy as np
 
@@ -10,18 +10,22 @@ from no2d_code.frank_wolfe.IO_operations import (
     load_edges,
     load_filtered_od_and_demand,
     save_ue_results,
+    has_ue_cache_pickle,
+    load_ue_cache_pickle,
+    save_ue_cache_pickle,
 )
 from no2d_code.frank_wolfe.bpr import bpr_flow
 from no2d_code.frank_wolfe.frank_wolfe_classes import FWResult, FWRunConfig
 from no2d_code.frank_wolfe.frankwolfe_ue_flex import frank_wolfe_ue_solver
-from no2d_code.frank_wolfe.shortestpathtree import Digraph
+from no2d_code.frank_wolfe.shortestpathtree import Digraph, shortestpathtree_edges_cell
 from no2d_code.visualisation.fw_flow_plotter import (
     compute_aon_flow,
     plot_fw_flow_comparison,
+    plot_edge_value_comparison,
 )
 
 
-def _check_and_prepare_paths(parent_dir: Path) -> tuple[Path, Path]:
+def _check_and_prepare_paths(parent_dir: Path) -> tuple[Path, Path, Path]:
     nodes_csv = parent_dir / "inputs/nodes.csv"
     if not nodes_csv.exists():
         raise FileNotFoundError(f"nodes.csv not found at: {nodes_csv}")
@@ -29,7 +33,10 @@ def _check_and_prepare_paths(parent_dir: Path) -> tuple[Path, Path]:
     plots_dir = parent_dir / "plots"
     plots_dir.mkdir(parents=True, exist_ok=True)
 
-    return nodes_csv, plots_dir
+    outputs_dir = parent_dir / "outputs"
+    outputs_dir.mkdir(parents=True, exist_ok=True)
+
+    return nodes_csv, plots_dir, outputs_dir
 
 
 def _load_problem_data(
@@ -59,6 +66,59 @@ def _build_run_config(
     )
 
 
+def _octt_from_traveltime(
+    traveltime_h: np.ndarray,
+    *,
+    time_scale: float,
+    k: float,
+    shift: float,
+    octt_max: float,
+) -> np.ndarray:
+    t = traveltime_h * time_scale
+    je = 11.0 + 0.02 * (t**2)
+
+    print("je_ue pct:", _p(je))
+    return octt_max / (1.0 + np.exp(k * (je - shift)))
+
+
+def _compute_od_costs_from_shortest_path_trees(
+    origin_destination: np.ndarray,
+    e_store: List[List[List[int]]],
+    edge_cost: np.ndarray,
+) -> np.ndarray:
+    od_cost = np.full(origin_destination.shape[0], np.inf, dtype=float)
+    for i in range(origin_destination.shape[0]):
+        s = int(origin_destination[i, 2])
+        t = int(origin_destination[i, 3])
+        edgepath = e_store[s][t]
+        if edgepath:
+            idx = np.asarray(edgepath, dtype=int)
+            od_cost[i] = float(np.sum(edge_cost[idx]))
+    return od_cost
+
+
+def _build_shortest_path_trees_all_origins(graph: Digraph) -> List[List[List[int]]]:
+    e_store: List[List[List[int]]] = [None] * graph.n_nodes  # type: ignore[assignment]
+    for i in range(graph.n_nodes):
+        e_store[i] = shortestpathtree_edges_cell(graph, i)
+    return e_store
+
+
+def _save_octt_outputs(
+    outputs_dir: Path,
+    tag: str,
+    *,
+    octt_edge: np.ndarray,
+    od_octt: np.ndarray,
+) -> None:
+    np.save(outputs_dir / f"octt_edge_{tag}.npy", octt_edge)
+    np.save(outputs_dir / f"od_octt_{tag}.npy", od_octt)
+
+
+def _p(x: np.ndarray) -> np.ndarray:
+    return np.percentile(x, [0, 1, 5, 50, 95, 99, 100])
+
+
 def _run_time_bins(
     time_bin_periods: List[str],
     graph: Digraph,
@@ -67,14 +127,25 @@ def _run_time_bins(
     run_cfg: FWRunConfig,
     nodes_csv: Path,
     plots_dir: Path,
+    outputs_dir: Path,
+    *,
+    compute_octt: bool,
+    octt_time_scale: float,
+    octt_k: float,
+    octt_shift: float,
+    octt_max: float,
+    use_cache: bool,
+    overwrite_cache: bool,
+    debug_octt: bool,
+    parent_directory: str,
+    tol: float,
 ):
     ue_flows: List[np.ndarray] = []
     ue_flows_best: List[np.ndarray] = []
     last_result: Optional[FWResult] = None
 
     for i, tag in enumerate(time_bin_periods):
-        print(f"Time bin ...{i + 1}")
-        print("Starting user-equilibrium Frank-Wolfe...")
+        print(f"Time bin ...{i + 1} ({tag})")
 
         flow0 = np.zeros(graph.u.size, dtype=float)
         graph.weight = bpr_flow(
@@ -90,51 +161,172 @@ def _run_time_bins(
             origin_destination=origin_destination,
         )
 
-        result = frank_wolfe_ue_solver(
-            demand=demand,
-            graph=graph,
-            origin_destination=origin_destination,
-            config=run_cfg,
-        )
+        loaded_from_cache = False
+        if use_cache and (not overwrite_cache) and has_ue_cache_pickle(parent_directory, tag):
+            UEflows_col, UEflowsBest_col, result, meta = load_ue_cache_pickle(parent_directory, tag)
+            loaded_from_cache = True
+            print(f"Loaded UE cache for tag={tag}: {meta}")
+        else:
+            print("Starting user-equilibrium Frank-Wolfe...")
+            result = frank_wolfe_ue_solver(
+                demand=demand,
+                graph=graph,
+                origin_destination=origin_destination,
+                config=run_cfg,
+            )
+            UEflows_col = result.flows
+            UEflowsBest_col = result.flows_best
 
-        ue_flows.append(result.flows)
-        ue_flows_best.append(result.flows_best)
+            if use_cache:
+                save_ue_cache_pickle(
+                    parent_dir=parent_directory,
+                    tag=tag,
+                    UEflows_col=UEflows_col,
+                    UEflowsBest_col=UEflowsBest_col,
+                    result=result,
+                    meta={
+                        "tol": float(tol),
+                        "eps": float(run_cfg.eps),
+                        "steplimit": int(run_cfg.steplimit),
+                    },
+                )
+                print(f"Saved UE cache for tag={tag}")
+
+        ue_flows.append(np.asarray(UEflows_col, dtype=float))
+        ue_flows_best.append(np.asarray(UEflowsBest_col, dtype=float))
         last_result = result
 
         out_png = plots_dir / f"fw_flow_compare_{tag}.png"
         plot_fw_flow_comparison(
             graph=graph,
             flow_init=aon_flow,
-            flow_final=result.flows,
+            flow_final=np.asarray(UEflows_col, dtype=float),
             nodes=nodes_csv,
             out_path=out_png,
         )
         print(f"Saved plot: {out_png}")
 
+        if compute_octt:
+            traveltime_aon = bpr_flow(
+                graph.free_flow_travel_h,
+                aon_flow,
+                graph.capacity,
+                graph.bpr_params,
+            )
+            traveltime_ue = bpr_flow(
+                graph.free_flow_travel_h,
+                np.asarray(UEflows_col, dtype=float),
+                graph.capacity,
+                graph.bpr_params,
+            )
+
+            octt_aon = _octt_from_traveltime(
+                traveltime_aon,
+                time_scale=octt_time_scale,
+                k=octt_k,
+                shift=octt_shift,
+                octt_max=octt_max,
+            )
+            octt_ue = _octt_from_traveltime(
+                traveltime_ue,
+                time_scale=octt_time_scale,
+                k=octt_k,
+                shift=octt_shift,
+                octt_max=octt_max,
+            )
+
+            if debug_octt:
+                print("traveltime_ue (h) pct:", _p(traveltime_ue))
+                print("t_scaled pct:", _p(traveltime_ue * octt_time_scale))
+                print("octt_ue pct:", _p(octt_ue))
+                print("octt_delta pct:", _p(octt_ue - octt_aon))
+
+            out_octt_png = plots_dir / f"fw_octt_compare_{tag}.png"
+            plot_edge_value_comparison(
+                graph=graph,
+                value_init=octt_aon,
+                value_final=octt_ue,
+                nodes=nodes_csv,
+                out_path=out_octt_png,
+                title_init="Initial (AoN) OCTT",
+                title_final="Final (UE) OCTT",
+                cbar_label="OCTT",
+                delta_label="OCTT change",
+            )
+            print(f"Saved plot: {out_octt_png}")
+
+            octt_edge = octt_ue
+            prev_weight = graph.weight
+            graph.weight = octt_edge
+            e_store_octt = _build_shortest_path_trees_all_origins(graph)
+            od_octt = _compute_od_costs_from_shortest_path_trees(
+                origin_destination=origin_destination,
+                e_store=e_store_octt,
+                edge_cost=octt_edge,
+            )
+            graph.weight = prev_weight
+
+            _save_octt_outputs(
+                outputs_dir=outputs_dir,
+                tag=tag,
+                octt_edge=octt_edge,
+                od_octt=od_octt,
+            )
+            print(f"Saved OCTT arrays for tag={tag}")
+
+            rho_aon = aon_flow / np.maximum(graph.capacity, 1e-12)
+            rho_ue = np.asarray(UEflows_col, dtype=float) / np.maximum(graph.capacity, 1e-12)
+
+            rho_clip = np.percentile(rho_ue, 99)
+            rho_aon = np.clip(rho_aon, 0.0, rho_clip)
+            rho_ue = np.clip(rho_ue, 0.0, rho_clip)
+
+            out_png = plots_dir / f"fw_density_compare_{tag}.png"
+            plot_edge_value_comparison(
+                graph=graph,
+                value_init=rho_aon,
+                value_final=rho_ue,
+                nodes=nodes_csv,
+                out_path=out_png,
+                title_init="Initial (AoN) density",
+                title_final="Final (UE) density",
+                cbar_label="density",
+                delta_label="Density change",
+            )
+            print(f"Saved plot: {out_png}")
+
+        if loaded_from_cache:
+            print("UE loaded from cache (no FW run).")
+
     if last_result is None:
         raise RuntimeError("No Frank–Wolfe iterations were run")
 
     n_edges = graph.u.size
-    ue_flows_arr = (
-        np.column_stack(ue_flows)
-        if ue_flows
-        else np.empty((n_edges, 0), dtype=float)
-    )
-    ue_flows_best_arr = (
-        np.column_stack(ue_flows_best)
-        if ue_flows_best
-        else np.empty((n_edges, 0), dtype=float)
-    )
+    ue_flows_arr = np.column_stack(ue_flows) if ue_flows else np.empty((n_edges, 0), dtype=float)
+    ue_flows_best_arr = np.column_stack(ue_flows_best) if ue_flows_best else np.empty((n_edges, 0), dtype=float)
 
     return ue_flows_arr, ue_flows_best_arr, last_result
 
 
-def find_transport_assignment_user_equilibrium(tol: float = 58.6, parent_directory: str = "../../data/", eps = 1e-6):
+def find_transport_assignment_user_equilibrium(
+    tol: float = 58.6,
+    parent_directory: str = "../../data/",
+    eps: float = 1e-6,
+    *,
+    compute_octt: bool = True,
+    octt_time_scale: float = 60.0,
+    octt_k: float = 0.01,
+    octt_shift: float = 500.0,
+    octt_max: float = 100.0,
+    use_cache: bool = True,
+    overwrite_cache: bool = False,
+    debug_octt: bool = False,
+):
     time_bin_periods = ["DAY"]
-    step_limit = 125000
+    step_limit = 100
 
     parent_dir = Path(parent_directory)
-    nodes_csv, plots_dir = _check_and_prepare_paths(parent_dir)
+    nodes_csv, plots_dir, outputs_dir = _check_and_prepare_paths(parent_dir)
 
     graph, origin_destination, demand = _load_problem_data(
         parent_directory=parent_directory,
@@ -156,6 +348,17 @@ def find_transport_assignment_user_equilibrium(tol: float = 58.6, parent_directo
         run_cfg=run_cfg,
         nodes_csv=nodes_csv,
         plots_dir=plots_dir,
+        outputs_dir=outputs_dir,
+        compute_octt=compute_octt,
+        octt_time_scale=octt_time_scale,
+        octt_k=octt_k,
+        octt_shift=octt_shift,
+        octt_max=octt_max,
+        use_cache=use_cache,
+        overwrite_cache=overwrite_cache,
+        debug_octt=debug_octt,
+        parent_directory=parent_directory,
+        tol=tol,
     )
 
     save_ue_results(
@@ -167,4 +370,11 @@ def find_transport_assignment_user_equilibrium(tol: float = 58.6, parent_directo
 
 
 if __name__ == "__main__":
-    find_transport_assignment_user_equilibrium(eps=1e-6)
+    find_transport_assignment_user_equilibrium(
+        compute_octt=True,
+        octt_time_scale=60.0,
+        octt_shift=11.03644,
+        octt_k=61.5,
+        octt_max=100.0,
+        debug_octt=True,
+    )
