@@ -18,6 +18,7 @@ from no2d_code.frank_wolfe.bpr import bpr_flow
 from no2d_code.frank_wolfe.frank_wolfe_classes import FWResult, FWRunConfig
 from no2d_code.frank_wolfe.frankwolfe_ue_flex import frank_wolfe_ue_solver
 from no2d_code.frank_wolfe.shortestpathtree import Digraph, shortestpathtree_edges_cell
+from no2d_code.frank_wolfe.octt_mapping import octt_from_traveltime
 from no2d_code.visualisation.fw_flow_plotter import (
     compute_aon_flow,
     plot_fw_flow_comparison,
@@ -39,7 +40,7 @@ def _check_and_prepare_paths(parent_dir: Path) -> tuple[Path, Path, Path]:
     return nodes_csv, plots_dir, outputs_dir
 
 
-def _load_problem_data(
+def _load_input_data(
     parent_directory: str,
     tol: float,
     eps: float,
@@ -64,21 +65,6 @@ def _build_run_config(
         crit_log_name=crit_log_name,
         crit_bests_name=crit_bests_name,
     )
-
-
-def _octt_from_traveltime(
-    traveltime_h: np.ndarray,
-    *,
-    time_scale: float,
-    k: float,
-    shift: float,
-    octt_max: float,
-) -> np.ndarray:
-    t = traveltime_h * time_scale
-    je = 11.0 + 0.02 * (t**2)
-
-    print("je_ue pct:", _p(je))
-    return octt_max / (1.0 + np.exp(k * (je - shift)))
 
 
 def _compute_od_costs_from_shortest_path_trees(
@@ -130,10 +116,6 @@ def _run_time_bins(
     outputs_dir: Path,
     *,
     compute_octt: bool,
-    octt_time_scale: float,
-    octt_k: float,
-    octt_shift: float,
-    octt_max: float,
     use_cache: bool,
     overwrite_cache: bool,
     debug_octt: bool,
@@ -188,6 +170,7 @@ def _run_time_bins(
                         "tol": float(tol),
                         "eps": float(run_cfg.eps),
                         "steplimit": int(run_cfg.steplimit),
+                        "octt_mapping": "octt_mapping.octt_from_traveltime",
                     },
                 )
                 print(f"Saved UE cache for tag={tag}")
@@ -220,25 +203,10 @@ def _run_time_bins(
                 graph.bpr_params,
             )
 
-            octt_aon = _octt_from_traveltime(
-                traveltime_aon,
-                time_scale=octt_time_scale,
-                k=octt_k,
-                shift=octt_shift,
-                octt_max=octt_max,
-            )
-            octt_ue = _octt_from_traveltime(
-                traveltime_ue,
-                time_scale=octt_time_scale,
-                k=octt_k,
-                shift=octt_shift,
-                octt_max=octt_max,
-            )
+            octt_aon = octt_from_traveltime(traveltime_aon, debug=debug_octt)
+            octt_ue = octt_from_traveltime(traveltime_ue, debug=debug_octt)
 
             if debug_octt:
-                print("traveltime_ue (h) pct:", _p(traveltime_ue))
-                print("t_scaled pct:", _p(traveltime_ue * octt_time_scale))
-                print("octt_ue pct:", _p(octt_ue))
                 print("octt_delta pct:", _p(octt_ue - octt_aon))
 
             out_octt_png = plots_dir / f"fw_octt_compare_{tag}.png"
@@ -314,10 +282,6 @@ def find_transport_assignment_user_equilibrium(
     eps: float = 1e-6,
     *,
     compute_octt: bool = True,
-    octt_time_scale: float = 60.0,
-    octt_k: float = 0.01,
-    octt_shift: float = 500.0,
-    octt_max: float = 100.0,
     use_cache: bool = True,
     overwrite_cache: bool = False,
     debug_octt: bool = False,
@@ -328,7 +292,7 @@ def find_transport_assignment_user_equilibrium(
     parent_dir = Path(parent_directory)
     nodes_csv, plots_dir, outputs_dir = _check_and_prepare_paths(parent_dir)
 
-    graph, origin_destination, demand = _load_problem_data(
+    graph, origin_destination, demand = _load_input_data(
         parent_directory=parent_directory,
         tol=tol,
         eps=eps,
@@ -350,10 +314,6 @@ def find_transport_assignment_user_equilibrium(
         plots_dir=plots_dir,
         outputs_dir=outputs_dir,
         compute_octt=compute_octt,
-        octt_time_scale=octt_time_scale,
-        octt_k=octt_k,
-        octt_shift=octt_shift,
-        octt_max=octt_max,
         use_cache=use_cache,
         overwrite_cache=overwrite_cache,
         debug_octt=debug_octt,
@@ -372,9 +332,7 @@ def find_transport_assignment_user_equilibrium(
 if __name__ == "__main__":
     find_transport_assignment_user_equilibrium(
         compute_octt=True,
-        octt_time_scale=60.0,
-        octt_shift=11.03644,
-        octt_k=61.5,
-        octt_max=100.0,
         debug_octt=True,
+        use_cache=True,
+        overwrite_cache=False,
     )
