@@ -8,9 +8,10 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 
-from no2d_code.frank_wolfe import frank_wolfe_ue_solver
+from no2d_code.frank_wolfe.frankwolfe_ue_flex import solve_frank_wolfe_user_equilibrium
 from no2d_code.frank_wolfe.frank_wolfe_classes import FWRunConfig
-from no2d_code.frank_wolfe.shortestpathtree import Digraph, shortestpathtree_edges_cell
+from no2d_code.frank_wolfe.digraph import Digraph
+from no2d_code.frank_wolfe.shortest_path_tree_builder import get_shortest_path_tree_edges_cell
 
 
 # =========================
@@ -140,7 +141,7 @@ def _od_shortest_costs(
 
     out: Dict[int, np.ndarray] = {}
     for s in np.unique(origins):
-        E = shortestpathtree_edges_cell(graph, int(s))
+        E = get_shortest_path_tree_edges_cell(graph, int(s))
         dist = np.full(graph.n_nodes, np.inf)
         dist[s] = 0.0
         for t in range(graph.n_nodes):
@@ -218,7 +219,7 @@ def main() -> None:
         crit_bests_name="",  # unused
     )
 
-    result = frank_wolfe_ue_solver(
+    result = solve_frank_wolfe_user_equilibrium(
         demand=demand,
         graph=graph,
         origin_destination=origin_destination,

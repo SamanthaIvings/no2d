@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import heapq
 from dataclasses import dataclass
 from typing import List, Tuple
 
@@ -59,46 +58,3 @@ class Digraph:
             free_flow_travel_h=free_flow_travel_h,
             bpr_params=bpr_params
         )
-
-
-def shortestpathtree_edges_cell(graph: Digraph, origin: int) -> List[List[int]]:
-    n = graph.n_nodes
-    dist = np.full(n, np.inf, dtype=float)
-    pred_node = np.full(n, -1, dtype=np.int64)
-    pred_edge = np.full(n, -1, dtype=np.int64)
-
-    origin = int(origin)
-    dist[origin] = 0.0
-    heap: List[Tuple[float, int]] = [(0.0, origin)]
-
-    tol = 1e-12
-
-    while heap:
-        d, node = heapq.heappop(heap)
-        if d > dist[node] + tol:
-            continue
-
-        for nbr, eid in graph.adj[node]:
-            nd = d + float(graph.weight[eid])
-            if nd + tol < dist[nbr]:
-                dist[nbr] = nd
-                pred_node[nbr] = node
-                pred_edge[nbr] = eid
-                heapq.heappush(heap, (nd, nbr))
-
-    E: List[List[int]] = [[] for _ in range(n)]
-    for t in range(n):
-        if t == origin or pred_edge[t] == -1:
-            continue
-
-        path_edges: List[int] = []
-        cur = t
-        while cur != origin and pred_edge[cur] != -1:
-            path_edges.append(int(pred_edge[cur]))
-            cur = int(pred_node[cur])
-
-        if cur == origin:
-            path_edges.reverse()
-            E[t] = path_edges
-
-    return E

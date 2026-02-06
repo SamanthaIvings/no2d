@@ -12,7 +12,7 @@ from matplotlib.colors import Normalize, TwoSlopeNorm
 from matplotlib.gridspec import GridSpec
 from numpy.typing import NDArray
 
-from no2d_code.frank_wolfe.shortestpathtree import Digraph
+from no2d_code.frank_wolfe.digraph import Digraph
 
 
 @dataclass(frozen=True)

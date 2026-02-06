@@ -17,18 +17,15 @@ from no2d_code.frank_wolfe.IO_operations import (
 )
 from no2d_code.frank_wolfe.bpr import bpr_flow
 from no2d_code.frank_wolfe.frank_wolfe_classes import FWResult, FWRunConfig
-from no2d_code.frank_wolfe.frankwolfe_ue_flex import frank_wolfe_ue_solver
-from no2d_code.frank_wolfe.shortestpathtree import Digraph, shortestpathtree_edges_cell
+from no2d_code.frank_wolfe.frankwolfe_ue_flex import solve_frank_wolfe_user_equilibrium
+from no2d_code.frank_wolfe.digraph import Digraph
 from no2d_code.frank_wolfe.octt_mapping import octt_from_traveltime
+from no2d_code.frank_wolfe.shortest_path_tree_builder import get_shortest_path_tree_edges_cell
 from no2d_code.visualisation.fw_flow_plotter import (
     plot_fw_flow_comparison,
     plot_edge_value_comparison,
 )
 
-
-# ------------------------------------------------------------------------------
-# Paths / IO
-# ------------------------------------------------------------------------------
 
 def _check_and_prepare_paths(parent_dir: Path) -> tuple[Path, Path, Path]:
     nodes_csv = Path(fc.input_path(str(parent_dir), fc.NODES_CSV))
@@ -71,10 +68,6 @@ def _build_run_config(
     )
 
 
-# ------------------------------------------------------------------------------
-# AoN / SPT utilities (unique origins)
-# ------------------------------------------------------------------------------
-
 def _compute_all_or_nothing_flow_unique_origins(
     *,
     demand: np.ndarray,
@@ -88,7 +81,7 @@ def _compute_all_or_nothing_flow_unique_origins(
     for j, s in enumerate(origins):
         if j % 200 == 0 or j == origins.size - 1:
             print(f"[AoN] Building SPT {j+1}/{origins.size}")
-        e_store[int(s)] = shortestpathtree_edges_cell(graph, int(s))
+        e_store[int(s)] = get_shortest_path_tree_edges_cell(graph, int(s))
 
     flow = np.zeros(graph.u.size, dtype=float)
 
@@ -120,7 +113,7 @@ def _compute_od_costs_unique_origins(
 
     e_store: Dict[int, List[List[int]]] = {}
     for s in origins:
-        e_store[int(s)] = shortestpathtree_edges_cell(graph, int(s))
+        e_store[int(s)] = get_shortest_path_tree_edges_cell(graph, int(s))
 
     od_cost = np.full(origin_destination.shape[0], np.inf, dtype=float)
     for i in range(origin_destination.shape[0]):
@@ -148,7 +141,7 @@ def _run_time_bins(
     overwrite_cache: bool,
     debug_octt: bool,
     parent_directory: str,
-    tol: float,
+    tolerance: float,
 ):
     ue_flows = []
     ue_flows_best = []
@@ -173,39 +166,36 @@ def _run_time_bins(
         )
 
         if use_cache and not overwrite_cache and has_ue_cache_pickle(parent_directory, tag):
-            UEflows, UEflowsBest, result, meta = load_ue_cache_pickle(parent_directory, tag)
+            ue_flows, ue_flows_best, result, meta = load_ue_cache_pickle(parent_directory, tag)
             print(f"[FW] Loaded cache: {meta}")
         else:
-            result = frank_wolfe_ue_solver(
+            result = solve_frank_wolfe_user_equilibrium(
                 demand=demand,
                 graph=graph,
                 origin_destination=origin_destination,
                 config=run_cfg,
             )
-            UEflows = result.flows
-            UEflowsBest = result.flows_best
+            ue_flows = result.flows
+            ue_flows_best = result.flows_best
 
             if use_cache:
                 save_ue_cache_pickle(
                     parent_dir=parent_directory,
                     tag=tag,
-                    UEflows_col=UEflows,
-                    UEflowsBest_col=UEflowsBest,
+                    UEflows_col=ue_flows,
+                    UEflowsBest_col=ue_flows_best,
                     result=result,
                     meta={
-                        "tol": tol,
+                        "tol": tolerance,
                         "eps": run_cfg.eps,
                         "steplimit": run_cfg.steplimit,
                     },
                 )
 
-        ue_flows.append(np.asarray(UEflows))
-        ue_flows_best.append(np.asarray(UEflowsBest))
+        ue_flows.append(np.asarray(ue_flows))
+        ue_flows_best.append(np.asarray(ue_flows_best))
         last_result = result
 
-        # ------------------------------------------------------------------
-        # Plot sanity check
-        # ------------------------------------------------------------------
         nodes_arr = np.genfromtxt(nodes_csv, delimiter=",", names=True)
         node_col = "node" if "node" in nodes_arr.dtype.names else nodes_arr.dtype.names[0]
         node_ids = np.asarray([r[node_col] for r in nodes_arr], dtype=int)
@@ -225,14 +215,14 @@ def _run_time_bins(
         plot_fw_flow_comparison(
             graph=graph,
             flow_init=aon_flow,
-            flow_final=np.asarray(UEflows),
+            flow_final=np.asarray(ue_flows),
             nodes=nodes_csv,
             out_path=out_png,
         )
 
         if compute_octt:
             tt_aon = bpr_flow(graph.free_flow_travel_h, aon_flow, graph.capacity, graph.bpr_params)
-            tt_ue = bpr_flow(graph.free_flow_travel_h, np.asarray(UEflows), graph.capacity, graph.bpr_params)
+            tt_ue = bpr_flow(graph.free_flow_travel_h, np.asarray(ue_flows), graph.capacity, graph.bpr_params)
 
             octt_aon = octt_from_traveltime(tt_aon, debug=debug_octt)
             octt_ue = octt_from_traveltime(tt_ue, debug=debug_octt)
@@ -269,7 +259,7 @@ def _run_time_bins(
 
 def find_transport_assignment_user_equilibrium(
     *,
-    tol: float = 100.0,
+    tolerance: float = 100.0,
     parent_directory: str = "../../data",
     eps: float = 1e-6,
     compute_octt: bool = True,
@@ -285,7 +275,7 @@ def find_transport_assignment_user_equilibrium(
 
     graph, origin_destination, demand = _load_input_data(
         parent_directory=parent_directory,
-        tol=tol,
+        tol=tolerance,
         eps=eps,
     )
 
@@ -309,7 +299,7 @@ def find_transport_assignment_user_equilibrium(
         overwrite_cache=overwrite_cache,
         debug_octt=debug_octt,
         parent_directory=parent_directory,
-        tol=tol,
+        tolerance=tolerance,
     )
 
     save_ue_results(

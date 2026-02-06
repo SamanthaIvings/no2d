@@ -1,7 +1,7 @@
 import numpy as np
 import pandas as pd
 
-from no2d_code.frank_wolfe.shortestpathtree import Digraph
+from no2d_code.frank_wolfe.digraph import Digraph
 
 
 def plot_car_stage1_vs_stage2(

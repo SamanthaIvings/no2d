@@ -9,15 +9,15 @@ import numpy as np
 import pandas as pd
 
 from no2d_code.frank_wolfe.IO_operations import init_ue_logs, load_edges, load_filtered_od_and_demand
+from no2d_code.frank_wolfe.all_or_nothing_assignment import compute_all_or_nothing_flow
 from no2d_code.frank_wolfe.bpr import bpr_flow
 from no2d_code.frank_wolfe.frank_wolfe_classes import FWRunConfig, FWResult
-from no2d_code.frank_wolfe.frankwolfe_ue_flex import frank_wolfe_ue_solver
+from no2d_code.frank_wolfe.frankwolfe_ue_flex import solve_frank_wolfe_user_equilibrium
 from no2d_code.frank_wolfe.octt_mapping import octt_from_traveltime
-from no2d_code.frank_wolfe.shortestpathtree import Digraph, shortestpathtree_edges_cell
-from no2d_code.visualisation.fw_flow_plotter import compute_aon_flow, plot_fw_flow_comparison
+from no2d_code.frank_wolfe.digraph import Digraph
+from no2d_code.frank_wolfe.shortest_path_tree_builder import get_shortest_path_tree_edges_cell
+from no2d_code.visualisation.fw_flow_plotter import plot_fw_flow_comparison
 from no2d_code.visualisation.fw_stages_comparison import plot_car_stage1_vs_stage2
-
-SEED = 42
 
 
 @dataclass(frozen=True)
@@ -62,9 +62,7 @@ def find_transport_assignment_user_equilibrium_multimodal(
     *,
     use_cache_stage1_car: bool = True,
     overwrite_cache_stage1_car: bool = False,
-) -> None:
-    rng = np.random.default_rng(SEED)
-
+):
     nodes_csv = os.path.join(parent_directory, "inputs", "nodes.csv")
     if not os.path.exists(nodes_csv):
         raise FileNotFoundError(f"nodes.csv not found at: {nodes_csv}")
@@ -234,7 +232,7 @@ def _run_single_ue(
     flow0 = np.zeros(graph.u.size, dtype=float)
     graph.weight = bpr_flow(graph.free_flow_travel_h, flow0, graph.capacity, graph.bpr_params)
 
-    result = frank_wolfe_ue_solver(
+    result = solve_frank_wolfe_user_equilibrium(
         demand=demand,
         graph=graph,
         origin_destination=origin_destination,
@@ -252,7 +250,7 @@ def _plot_flow(
     nodes_csv: str,
     out_png: str,
 ) -> None:
-    aon = compute_aon_flow(graph=graph, demand=demand, origin_destination=origin_destination)
+    aon = compute_all_or_nothing_flow(graph=graph, demand=demand, origin_destination=origin_destination)
     plot_fw_flow_comparison(
         graph=graph,
         flow_init=aon,
@@ -359,7 +357,7 @@ def _pack_bpr(alpha: float, beta: float, eps: float, n_edges: int) -> np.ndarray
 def _build_shortest_path_trees_all_origins(graph: Digraph) -> List[List[List[int]]]:
     e_store: List[List[List[int]]] = [None] * graph.n_nodes  # type: ignore[assignment]
     for i in range(graph.n_nodes):
-        e_store[i] = shortestpathtree_edges_cell(graph, i)
+        e_store[i] = get_shortest_path_tree_edges_cell(graph, i)
     return e_store
 
 

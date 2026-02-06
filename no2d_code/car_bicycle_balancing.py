@@ -5,9 +5,9 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 
-from no2d_code.frank_wolfe import frank_wolfe_ue_solver
+from no2d_code.frank_wolfe.frankwolfe_ue_flex import solve_frank_wolfe_user_equilibrium
 from no2d_code.frank_wolfe.frank_wolfe_classes import FWRunConfig
-from no2d_code.frank_wolfe.shortestpathtree import Digraph
+from no2d_code.frank_wolfe.digraph import Digraph
 
 
 def bpr_flow_smooth(time, flow, capacity, params):
@@ -54,8 +54,8 @@ def run_modal_ue(gamma: float, total_demand: float, cfg: FWRunConfig):
     car_graph = make_car_network()
     bike_graph = make_bike_network()
 
-    car_res = frank_wolfe_ue_solver(demand_car, car_graph, od, cfg)
-    bike_res = frank_wolfe_ue_solver(demand_bike, bike_graph, od, cfg)
+    car_res = solve_frank_wolfe_user_equilibrium(demand_car, car_graph, od, cfg)
+    bike_res = solve_frank_wolfe_user_equilibrium(demand_bike, bike_graph, od, cfg)
 
     return car_graph, car_res, bike_graph, bike_res
 
