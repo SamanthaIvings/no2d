@@ -12,15 +12,21 @@ import pandas as pd
 import osmnx as ox
 
 
-PLACE = "Sheffield, England, United Kingdom"
-OUT_DIR = Path("data/osm_sheffield")
+PLACES = [
+    "Sheffield, England, United Kingdom",
+    "Rotherham, England, United Kingdom",
+    "Doncaster, England, United Kingdom",
+    "Barnsley, England, United Kingdom",
+]
+
+OUT_DIR = Path("data/osm_south_yorkshire")
 EPSG_UK = 27700
 
 
 def main() -> None:
     OUT_DIR.mkdir(parents=True, exist_ok=True)
 
-    G = _download_drive_graph(PLACE)
+    G = _download_drive_graph(PLACES)
     G = _project_graph(G, EPSG_UK)
     G, old_node_id_to_new_idx = _relabel_nodes_to_integers(G)
 
@@ -40,8 +46,11 @@ def main() -> None:
     _atomic_pickle_dump(OUT_DIR / "edges_bus.pkl", edges_bus)
     _atomic_pickle_dump(OUT_DIR / "edges_bike.pkl", edges_bike)
 
+    nodes_df.to_csv(OUT_DIR / "nodes.csv", index=False)
+    edges_car.to_csv(OUT_DIR / "edges.csv", index=False)
+
     meta = _build_meta(
-        place=PLACE,
+        place=" | ".join(PLACES),
         epsg=EPSG_UK,
         n_nodes=int(nodes_df.shape[0]),
         n_edges=int(edges_df.shape[0]),
@@ -53,9 +62,9 @@ def main() -> None:
     print(f"Edges car/bus/bike: {edges_car.shape[0]} / {edges_bus.shape[0]} / {edges_bike.shape[0]}")
 
 
-def _download_drive_graph(place: str) -> nx.MultiDiGraph:
+def _download_drive_graph(places: list[str]) -> nx.MultiDiGraph:
     ox.settings.log_console = False
-    return ox.graph_from_place(place, network_type="drive", simplify=True)
+    return ox.graph_from_place(places, network_type="drive", simplify=True)
 
 
 def _project_graph(G: nx.MultiDiGraph, epsg: int) -> nx.MultiDiGraph:
@@ -74,8 +83,8 @@ def _extract_nodes_df(G: nx.MultiDiGraph) -> pd.DataFrame:
         rows.append(
             {
                 "node": int(n),
-                "x": float(data.get("x", np.nan)),
-                "y": float(data.get("y", np.nan)),
+                "x": data.get("x", np.nan),
+                "y": data.get("y", np.nan)
             }
         )
     return pd.DataFrame(rows).sort_values("node").reset_index(drop=True)
@@ -129,11 +138,7 @@ def _extract_edges_df(G: nx.MultiDiGraph) -> pd.DataFrame:
 def _col_str(gdf: pd.DataFrame, col: str, n: int) -> pd.Series:
     if col not in gdf.columns:
         return pd.Series(["nan"] * n, dtype=str)
-    s = gdf[col]
-    if isinstance(s, pd.Series):
-        out = s.astype(str)
-    else:
-        out = pd.Series(s, dtype=str).astype(str)
+    out = gdf[col].astype(str)
     if len(out) != n:
         out = out.reindex(range(n)).fillna("nan").astype(str)
     return out
