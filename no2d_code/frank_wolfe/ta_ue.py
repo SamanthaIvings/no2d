@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import List, Optional
+from typing import List, Optional, Dict
 
 import numpy as np
 
+from no2d_code.frank_wolfe import filepath_configs as fc
 from no2d_code.frank_wolfe.IO_operations import (
     init_ue_logs,
     load_edges,
@@ -20,21 +21,24 @@ from no2d_code.frank_wolfe.frankwolfe_ue_flex import frank_wolfe_ue_solver
 from no2d_code.frank_wolfe.shortestpathtree import Digraph, shortestpathtree_edges_cell
 from no2d_code.frank_wolfe.octt_mapping import octt_from_traveltime
 from no2d_code.visualisation.fw_flow_plotter import (
-    compute_aon_flow,
     plot_fw_flow_comparison,
     plot_edge_value_comparison,
 )
 
 
+# ------------------------------------------------------------------------------
+# Paths / IO
+# ------------------------------------------------------------------------------
+
 def _check_and_prepare_paths(parent_dir: Path) -> tuple[Path, Path, Path]:
-    nodes_csv = parent_dir / "inputs/nodes.csv"
+    nodes_csv = Path(fc.input_path(str(parent_dir), fc.NODES_CSV))
     if not nodes_csv.exists():
         raise FileNotFoundError(f"nodes.csv not found at: {nodes_csv}")
 
     plots_dir = parent_dir / "plots"
     plots_dir.mkdir(parents=True, exist_ok=True)
 
-    outputs_dir = parent_dir / "outputs"
+    outputs_dir = Path(fc.outputs_dir(str(parent_dir)))
     outputs_dir.mkdir(parents=True, exist_ok=True)
 
     return nodes_csv, plots_dir, outputs_dir
@@ -67,45 +71,70 @@ def _build_run_config(
     )
 
 
-def _compute_od_costs_from_shortest_path_trees(
+# ------------------------------------------------------------------------------
+# AoN / SPT utilities (unique origins)
+# ------------------------------------------------------------------------------
+
+def _compute_all_or_nothing_flow_unique_origins(
+    *,
+    demand: np.ndarray,
     origin_destination: np.ndarray,
-    e_store: List[List[List[int]]],
-    edge_cost: np.ndarray,
+    graph: Digraph,
 ) -> np.ndarray:
+    origins = np.unique(origin_destination[:, 2].astype(int))
+    print(f"[AoN] Unique origins: {origins.size}")
+
+    e_store: Dict[int, List[List[int]]] = {}
+    for j, s in enumerate(origins):
+        if j % 200 == 0 or j == origins.size - 1:
+            print(f"[AoN] Building SPT {j+1}/{origins.size}")
+        e_store[int(s)] = shortestpathtree_edges_cell(graph, int(s))
+
+    flow = np.zeros(graph.u.size, dtype=float)
+
+    hit = 0
+    for i in range(origin_destination.shape[0]):
+        s = int(origin_destination[i, 2])
+        t = int(origin_destination[i, 3])
+        store = e_store.get(s)
+        if store is None:
+            continue
+        path = store[t]
+        if path:
+            hit += 1
+            d = float(demand[i])
+            for e in path:
+                flow[int(e)] += d
+
+    print(f"[AoN] Done. Paths found for {hit}/{origin_destination.shape[0]} ODs.")
+    return flow
+
+
+def _compute_od_costs_unique_origins(
+    *,
+    origin_destination: np.ndarray,
+    edge_cost: np.ndarray,
+    graph: Digraph,
+) -> np.ndarray:
+    origins = np.unique(origin_destination[:, 2].astype(int))
+
+    e_store: Dict[int, List[List[int]]] = {}
+    for s in origins:
+        e_store[int(s)] = shortestpathtree_edges_cell(graph, int(s))
+
     od_cost = np.full(origin_destination.shape[0], np.inf, dtype=float)
     for i in range(origin_destination.shape[0]):
         s = int(origin_destination[i, 2])
         t = int(origin_destination[i, 3])
-        edgepath = e_store[s][t]
-        if edgepath:
-            idx = np.asarray(edgepath, dtype=int)
-            od_cost[i] = float(np.sum(edge_cost[idx]))
+        path = e_store[s][t]
+        if path:
+            od_cost[i] = float(np.sum(edge_cost[np.asarray(path, dtype=int)]))
+
     return od_cost
 
 
-def _build_shortest_path_trees_all_origins(graph: Digraph) -> List[List[List[int]]]:
-    e_store: List[List[List[int]]] = [None] * graph.n_nodes  # type: ignore[assignment]
-    for i in range(graph.n_nodes):
-        e_store[i] = shortestpathtree_edges_cell(graph, i)
-    return e_store
-
-
-def _save_octt_outputs(
-    outputs_dir: Path,
-    tag: str,
-    *,
-    octt_edge: np.ndarray,
-    od_octt: np.ndarray,
-) -> None:
-    np.save(outputs_dir / f"octt_edge_{tag}.npy", octt_edge)
-    np.save(outputs_dir / f"od_octt_{tag}.npy", od_octt)
-
-
-def _p(x: np.ndarray) -> np.ndarray:
-    return np.percentile(x, [0, 1, 5, 50, 95, 99, 100])
-
-
 def _run_time_bins(
+    *,
     time_bin_periods: List[str],
     graph: Digraph,
     demand: np.ndarray,
@@ -114,7 +143,6 @@ def _run_time_bins(
     nodes_csv: Path,
     plots_dir: Path,
     outputs_dir: Path,
-    *,
     compute_octt: bool,
     use_cache: bool,
     overwrite_cache: bool,
@@ -122,12 +150,12 @@ def _run_time_bins(
     parent_directory: str,
     tol: float,
 ):
-    ue_flows: List[np.ndarray] = []
-    ue_flows_best: List[np.ndarray] = []
+    ue_flows = []
+    ue_flows_best = []
     last_result: Optional[FWResult] = None
 
-    for i, tag in enumerate(time_bin_periods):
-        print(f"Time bin ...{i + 1} ({tag})")
+    for tag in time_bin_periods:
+        print(f"Time bin ... ({tag})")
 
         flow0 = np.zeros(graph.u.size, dtype=float)
         graph.weight = bpr_flow(
@@ -137,77 +165,77 @@ def _run_time_bins(
             graph.bpr_params,
         )
 
-        aon_flow = compute_aon_flow(
-            graph=graph,
+        print("[AoN] Computing initial all-or-nothing flow...")
+        aon_flow = _compute_all_or_nothing_flow_unique_origins(
             demand=demand,
             origin_destination=origin_destination,
+            graph=graph,
         )
 
-        loaded_from_cache = False
-        if use_cache and (not overwrite_cache) and has_ue_cache_pickle(parent_directory, tag):
-            UEflows_col, UEflowsBest_col, result, meta = load_ue_cache_pickle(parent_directory, tag)
-            loaded_from_cache = True
-            print(f"Loaded UE cache for tag={tag}: {meta}")
+        if use_cache and not overwrite_cache and has_ue_cache_pickle(parent_directory, tag):
+            UEflows, UEflowsBest, result, meta = load_ue_cache_pickle(parent_directory, tag)
+            print(f"[FW] Loaded cache: {meta}")
         else:
-            print("Starting user-equilibrium Frank-Wolfe...")
             result = frank_wolfe_ue_solver(
                 demand=demand,
                 graph=graph,
                 origin_destination=origin_destination,
                 config=run_cfg,
             )
-            UEflows_col = result.flows
-            UEflowsBest_col = result.flows_best
+            UEflows = result.flows
+            UEflowsBest = result.flows_best
 
             if use_cache:
                 save_ue_cache_pickle(
                     parent_dir=parent_directory,
                     tag=tag,
-                    UEflows_col=UEflows_col,
-                    UEflowsBest_col=UEflowsBest_col,
+                    UEflows_col=UEflows,
+                    UEflowsBest_col=UEflowsBest,
                     result=result,
                     meta={
-                        "tol": float(tol),
-                        "eps": float(run_cfg.eps),
-                        "steplimit": int(run_cfg.steplimit),
-                        "octt_mapping": "octt_mapping.octt_from_traveltime",
+                        "tol": tol,
+                        "eps": run_cfg.eps,
+                        "steplimit": run_cfg.steplimit,
                     },
                 )
-                print(f"Saved UE cache for tag={tag}")
 
-        ue_flows.append(np.asarray(UEflows_col, dtype=float))
-        ue_flows_best.append(np.asarray(UEflowsBest_col, dtype=float))
+        ue_flows.append(np.asarray(UEflows))
+        ue_flows_best.append(np.asarray(UEflowsBest))
         last_result = result
+
+        # ------------------------------------------------------------------
+        # Plot sanity check
+        # ------------------------------------------------------------------
+        nodes_arr = np.genfromtxt(nodes_csv, delimiter=",", names=True)
+        node_col = "node" if "node" in nodes_arr.dtype.names else nodes_arr.dtype.names[0]
+        node_ids = np.asarray([r[node_col] for r in nodes_arr], dtype=int)
+
+        print("[PLOT] nodes_csv:", nodes_csv)
+        print("[PLOT] node_ids min/max/count:",
+              int(node_ids.min()), int(node_ids.max()), node_ids.size)
+        print("[PLOT] graph expects node ids 0..", graph.n_nodes - 1)
+
+        if node_ids.min() != 0 or node_ids.max() != graph.n_nodes - 1:
+            raise ValueError(
+                "nodes.csv does not match Digraph node ids. "
+                "You are plotting with the wrong nodes file."
+            )
 
         out_png = plots_dir / f"fw_flow_compare_{tag}.png"
         plot_fw_flow_comparison(
             graph=graph,
             flow_init=aon_flow,
-            flow_final=np.asarray(UEflows_col, dtype=float),
+            flow_final=np.asarray(UEflows),
             nodes=nodes_csv,
             out_path=out_png,
         )
-        print(f"Saved plot: {out_png}")
 
         if compute_octt:
-            traveltime_aon = bpr_flow(
-                graph.free_flow_travel_h,
-                aon_flow,
-                graph.capacity,
-                graph.bpr_params,
-            )
-            traveltime_ue = bpr_flow(
-                graph.free_flow_travel_h,
-                np.asarray(UEflows_col, dtype=float),
-                graph.capacity,
-                graph.bpr_params,
-            )
+            tt_aon = bpr_flow(graph.free_flow_travel_h, aon_flow, graph.capacity, graph.bpr_params)
+            tt_ue = bpr_flow(graph.free_flow_travel_h, np.asarray(UEflows), graph.capacity, graph.bpr_params)
 
-            octt_aon = octt_from_traveltime(traveltime_aon, debug=debug_octt)
-            octt_ue = octt_from_traveltime(traveltime_ue, debug=debug_octt)
-
-            if debug_octt:
-                print("octt_delta pct:", _p(octt_ue - octt_aon))
+            octt_aon = octt_from_traveltime(tt_aon, debug=debug_octt)
+            octt_ue = octt_from_traveltime(tt_ue, debug=debug_octt)
 
             out_octt_png = plots_dir / f"fw_octt_compare_{tag}.png"
             plot_edge_value_comparison(
@@ -216,78 +244,41 @@ def _run_time_bins(
                 value_final=octt_ue,
                 nodes=nodes_csv,
                 out_path=out_octt_png,
-                title_init="Initial (AoN) OCTT",
-                title_final="Final (UE) OCTT",
+                title_init="AoN OCTT",
+                title_final="UE OCTT",
                 cbar_label="OCTT",
-                delta_label="OCTT change",
+                delta_label="ΔOCTT",
             )
-            print(f"Saved plot: {out_octt_png}")
 
-            octt_edge = octt_ue
-            prev_weight = graph.weight
-            graph.weight = octt_edge
-            e_store_octt = _build_shortest_path_trees_all_origins(graph)
-            od_octt = _compute_od_costs_from_shortest_path_trees(
+            graph.weight = octt_ue
+            od_octt = _compute_od_costs_unique_origins(
                 origin_destination=origin_destination,
-                e_store=e_store_octt,
-                edge_cost=octt_edge,
-            )
-            graph.weight = prev_weight
-
-            _save_octt_outputs(
-                outputs_dir=outputs_dir,
-                tag=tag,
-                octt_edge=octt_edge,
-                od_octt=od_octt,
-            )
-            print(f"Saved OCTT arrays for tag={tag}")
-
-            rho_aon = aon_flow / np.maximum(graph.capacity, 1e-12)
-            rho_ue = np.asarray(UEflows_col, dtype=float) / np.maximum(graph.capacity, 1e-12)
-
-            rho_clip = np.percentile(rho_ue, 99)
-            rho_aon = np.clip(rho_aon, 0.0, rho_clip)
-            rho_ue = np.clip(rho_ue, 0.0, rho_clip)
-
-            out_png = plots_dir / f"fw_density_compare_{tag}.png"
-            plot_edge_value_comparison(
+                edge_cost=octt_ue,
                 graph=graph,
-                value_init=rho_aon,
-                value_final=rho_ue,
-                nodes=nodes_csv,
-                out_path=out_png,
-                title_init="Initial (AoN) density",
-                title_final="Final (UE) density",
-                cbar_label="density",
-                delta_label="Density change",
             )
-            print(f"Saved plot: {out_png}")
 
-        if loaded_from_cache:
-            print("UE loaded from cache (no FW run).")
+            np.save(outputs_dir / f"octt_edge_{tag}.npy", octt_ue)
+            np.save(outputs_dir / f"od_octt_{tag}.npy", od_octt)
 
-    if last_result is None:
-        raise RuntimeError("No Frank–Wolfe iterations were run")
-
-    n_edges = graph.u.size
-    ue_flows_arr = np.column_stack(ue_flows) if ue_flows else np.empty((n_edges, 0), dtype=float)
-    ue_flows_best_arr = np.column_stack(ue_flows_best) if ue_flows_best else np.empty((n_edges, 0), dtype=float)
-
-    return ue_flows_arr, ue_flows_best_arr, last_result
+    return (
+        np.column_stack(ue_flows),
+        np.column_stack(ue_flows_best),
+        last_result,
+    )
 
 
 def find_transport_assignment_user_equilibrium(
-    tol: float = 58.6,
-    parent_directory: str = "../../data/",
-    eps: float = 1e-6,
     *,
+    tol: float = 100.0,
+    parent_directory: str = "../../data",
+    eps: float = 1e-6,
     compute_octt: bool = True,
     use_cache: bool = True,
     overwrite_cache: bool = False,
     debug_octt: bool = False,
 ):
     time_bin_periods = ["DAY"]
-    step_limit = 100
+    step_limit = 200
 
     parent_dir = Path(parent_directory)
     nodes_csv, plots_dir, outputs_dir = _check_and_prepare_paths(parent_dir)
@@ -332,7 +323,7 @@ def find_transport_assignment_user_equilibrium(
 if __name__ == "__main__":
     find_transport_assignment_user_equilibrium(
         compute_octt=True,
-        debug_octt=True,
-        use_cache=True,
-        overwrite_cache=False,
+        debug_octt=False,
+        use_cache=False,
+        overwrite_cache=True,
     )

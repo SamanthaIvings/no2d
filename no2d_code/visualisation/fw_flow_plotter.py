@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import List, Optional, Union
+from typing import Optional, Union
 
 import numpy as np
 import pandas as pd
@@ -12,9 +12,7 @@ from matplotlib.colors import Normalize, TwoSlopeNorm
 from matplotlib.gridspec import GridSpec
 from numpy.typing import NDArray
 
-from no2d_code.frank_wolfe.bpr import bpr_flow
-from no2d_code.frank_wolfe.frankwolfe_ue_flex import _all_or_nothing_flow
-from no2d_code.frank_wolfe.shortestpathtree import Digraph, shortestpathtree_edges_cell
+from no2d_code.frank_wolfe.shortestpathtree import Digraph
 
 
 @dataclass(frozen=True)
@@ -24,29 +22,6 @@ class NodeXY:
 
 
 NodesLike = Union[pd.DataFrame, str, Path, NodeXY]
-
-
-def _build_shortest_path_trees(graph: Digraph) -> List[List[List[int]]]:
-    e_store: List[List[List[int]]] = [None] * graph.n_nodes  # type: ignore[assignment]
-    for i in range(graph.n_nodes):
-        e_store[i] = shortestpathtree_edges_cell(graph, i)
-    return e_store
-
-
-def compute_aon_flow(
-    graph: Digraph,
-    demand: NDArray[np.float64],
-    origin_destination: NDArray[np.float64],
-) -> NDArray[np.float64]:
-    old_weight = graph.weight
-    try:
-        flow0 = np.zeros(graph.u.size, dtype=float)
-        graph.weight = bpr_flow(graph.free_flow_travel_h, flow0, graph.capacity, graph.bpr_params)
-
-        e_store = _build_shortest_path_trees(graph)
-        return _all_or_nothing_flow(demand, origin_destination, e_store, graph.u.size)
-    finally:
-        graph.weight = old_weight
 
 
 def _node_xy_from_nodes(nodes: NodesLike, n_nodes: int) -> NodeXY:
