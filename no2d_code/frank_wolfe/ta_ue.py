@@ -19,12 +19,16 @@ from no2d_code.frank_wolfe.bpr import bpr_flow
 from no2d_code.frank_wolfe.frank_wolfe_classes import FWResult, FWRunConfig
 from no2d_code.frank_wolfe.frankwolfe_ue_flex import solve_frank_wolfe_user_equilibrium
 from no2d_code.frank_wolfe.digraph import Digraph
-from no2d_code.frank_wolfe.octt_mapping import octt_from_traveltime
+from no2d_code.frank_wolfe.octt_mapping import octt_from_traveltime, att_bu_from_octt
 from no2d_code.frank_wolfe.shortest_path_tree_builder import get_shortest_path_tree_edges_cell
 from no2d_code.visualisation.fw_flow_plotter import (
     plot_fw_flow_comparison,
     plot_edge_value_comparison,
+    plot_fw_lsoa_flow_comparison,
+    plot_lsoa_value_comparison,
+    build_edge_lsoa_map,
 )
+from no2d_code.visualisation.lsoa_metric_plotter import plot_lsoa_value_state
 
 
 def _check_and_prepare_paths(parent_dir: Path) -> tuple[Path, Path, Path]:
@@ -65,6 +69,32 @@ def _build_run_config(
         txt_name=txt_name,
         crit_log_name=crit_log_name,
         crit_bests_name=crit_bests_name,
+    )
+
+
+def _resolve_lsoa_polygons_path(
+    parent_dir: Path,
+    tol: float,
+    lsoa_polygons_path: Optional[Path],
+) -> Path:
+    if lsoa_polygons_path is not None:
+        lsoa_path = Path(lsoa_polygons_path)
+        if not lsoa_path.exists():
+            raise FileNotFoundError(f"LSOA polygons not found: {lsoa_path}")
+        return lsoa_path
+
+    candidates = [
+        parent_dir / "inputs" / "fw_inputs_sy_simplified" / f"lDists_tol{tol}.csv",
+        parent_dir / "inputs" / "fw_inputs_sy_simplified" / "lDists.csv",
+        parent_dir / "inputs" / "geo" / "LSOA_2011_EW_BGC.zip",
+    ]
+    for path in candidates:
+        if path.exists():
+            return path
+
+    raise FileNotFoundError(
+        "LSOA polygons not found. Provide lsoa_polygons_path "
+        "or add lDists.csv / lDists_tol{tol}.csv under data/inputs."
     )
 
 
@@ -141,11 +171,37 @@ def _run_time_bins(
     overwrite_cache: bool,
     debug_octt: bool,
     parent_directory: str,
-    tolerance: float,
+    tol: float,
+    plot_lsoa: bool,
+    lsoa_polygons_path: Optional[Path],
+    edge_lsoa_map_path: Optional[Path],
+    lsoa_name_filter: Optional[List[str]],
 ):
-    ue_flows = []
-    ue_flows_best = []
+    ue_flows_col = []
+    ue_flows_best_col = []
     last_result: Optional[FWResult] = None
+
+    lsoa_polygons = None
+    edge_lsoa_map = None
+    if plot_lsoa:
+        lsoa_polygons = _resolve_lsoa_polygons_path(
+            Path(parent_directory),
+            tol,
+            lsoa_polygons_path,
+        )
+        if edge_lsoa_map_path is not None:
+            edge_lsoa_map = Path(edge_lsoa_map_path)
+        else:
+            edge_lsoa_map = outputs_dir / f"edge_lsoa_map_tol{tol}.csv"
+        if not edge_lsoa_map.exists():
+            print(f"[LSOA] Building edge->LSOA map: {edge_lsoa_map}")
+            build_edge_lsoa_map(
+                graph,
+                nodes=nodes_csv,
+                lsoa_polygons=lsoa_polygons,
+                out_path=edge_lsoa_map,
+                lsoa_name_filter=lsoa_name_filter,
+            )
 
     for tag in time_bin_periods:
         print(f"Time bin ... ({tag})")
@@ -165,35 +221,46 @@ def _run_time_bins(
             graph=graph,
         )
 
+        cache_ok = False
         if use_cache and not overwrite_cache and has_ue_cache_pickle(parent_directory, tag):
-            ue_flows, ue_flows_best, result, meta = load_ue_cache_pickle(parent_directory, tag)
+            ue_flow, ue_flow_best, result, meta = load_ue_cache_pickle(parent_directory, tag)
             print(f"[FW] Loaded cache: {meta}")
-        else:
+            ue_flow = np.asarray(ue_flow)
+            ue_flow_best = np.asarray(ue_flow_best)
+            if ue_flow.size == graph.u.size and ue_flow_best.size == graph.u.size:
+                cache_ok = True
+            else:
+                print(
+                    "[FW] Cache flow length mismatch; recomputing "
+                    f"(cache={ue_flow.size}/{ue_flow_best.size}, graph={graph.u.size})."
+                )
+
+        if not cache_ok:
             result = solve_frank_wolfe_user_equilibrium(
                 demand=demand,
                 graph=graph,
                 origin_destination=origin_destination,
                 config=run_cfg,
             )
-            ue_flows = result.flows
-            ue_flows_best = result.flows_best
+            ue_flow = result.flows
+            ue_flow_best = result.flows_best
 
             if use_cache:
                 save_ue_cache_pickle(
                     parent_dir=parent_directory,
                     tag=tag,
-                    UEflows_col=ue_flows,
-                    UEflowsBest_col=ue_flows_best,
+                    UEflows_col=ue_flow,
+                    UEflowsBest_col=ue_flow_best,
                     result=result,
                     meta={
-                        "tol": tolerance,
+                        "tol": tol,
                         "eps": run_cfg.eps,
                         "steplimit": run_cfg.steplimit,
                     },
                 )
 
-        ue_flows.append(np.asarray(ue_flows))
-        ue_flows_best.append(np.asarray(ue_flows_best))
+        ue_flows_col.append(np.asarray(ue_flow))
+        ue_flows_best_col.append(np.asarray(ue_flow_best))
         last_result = result
 
         nodes_arr = np.genfromtxt(nodes_csv, delimiter=",", names=True)
@@ -211,34 +278,147 @@ def _run_time_bins(
                 "You are plotting with the wrong nodes file."
             )
 
-        out_png = plots_dir / f"fw_flow_compare_{tag}.png"
+        out_pdf = plots_dir / f"fw_flow_change_{tag}.pdf"
         plot_fw_flow_comparison(
             graph=graph,
             flow_init=aon_flow,
-            flow_final=np.asarray(ue_flows),
+            flow_final=np.asarray(ue_flow),
             nodes=nodes_csv,
-            out_path=out_png,
+            out_path=out_pdf,
+            delta_only=True,
+            cbar_numbers=False,
         )
+
+        if plot_lsoa:
+            out_lsoa_png = plots_dir / f"fw_lsoa_flow_change_{tag}.png"
+            plot_fw_lsoa_flow_comparison(
+                graph=graph,
+                flow_init=aon_flow,
+                flow_final=np.asarray(ue_flow),
+                nodes=nodes_csv,
+                lsoa_polygons=lsoa_polygons,
+                edge_lsoa_map=edge_lsoa_map,
+                out_path=out_lsoa_png,
+                lsoa_name_filter=lsoa_name_filter,
+            )
 
         if compute_octt:
             tt_aon = bpr_flow(graph.free_flow_travel_h, aon_flow, graph.capacity, graph.bpr_params)
-            tt_ue = bpr_flow(graph.free_flow_travel_h, np.asarray(ue_flows), graph.capacity, graph.bpr_params)
+            tt_ue = bpr_flow(graph.free_flow_travel_h, np.asarray(ue_flow), graph.capacity, graph.bpr_params)
 
             octt_aon = octt_from_traveltime(tt_aon, debug=debug_octt)
             octt_ue = octt_from_traveltime(tt_ue, debug=debug_octt)
 
-            out_octt_png = plots_dir / f"fw_octt_compare_{tag}.png"
+            out_octt_pdf = plots_dir / f"fw_octt_change_{tag}.pdf"
             plot_edge_value_comparison(
                 graph=graph,
                 value_init=octt_aon,
                 value_final=octt_ue,
                 nodes=nodes_csv,
-                out_path=out_octt_png,
+                out_path=out_octt_pdf,
                 title_init="AoN OCTT",
                 title_final="UE OCTT",
                 cbar_label="OCTT",
                 delta_label="ΔOCTT",
+                delta_only=True,
+                cbar_numbers=False,
             )
+
+            if plot_lsoa:
+                out_lsoa_octt_png = plots_dir / f"fw_lsoa_octt_change_{tag}.png"
+                plot_lsoa_value_comparison(
+                    graph=graph,
+                    value_init=octt_aon,
+                    value_final=octt_ue,
+                    nodes=nodes_csv,
+                    lsoa_polygons=lsoa_polygons,
+                    edge_lsoa_map=edge_lsoa_map,
+                    out_path=out_lsoa_octt_png,
+                    lsoa_name_filter=lsoa_name_filter,
+                    cbar_label="Change in OCTT",
+                )
+
+            att_aon, bu_aon = att_bu_from_octt(octt_aon)
+            att_ue, bu_ue = att_bu_from_octt(octt_ue)
+
+            out_att_pdf = plots_dir / f"fw_att_change_{tag}.pdf"
+            plot_edge_value_comparison(
+                graph=graph,
+                value_init=att_aon,
+                value_final=att_ue,
+                nodes=nodes_csv,
+                out_path=out_att_pdf,
+                title_init="AoN ATT",
+                title_final="UE ATT",
+                cbar_label="ATT",
+                delta_label="ΔATT",
+                delta_only=True,
+                cbar_numbers=False,
+            )
+
+            out_bu_pdf = plots_dir / f"fw_bu_change_{tag}.pdf"
+            plot_edge_value_comparison(
+                graph=graph,
+                value_init=bu_aon,
+                value_final=bu_ue,
+                nodes=nodes_csv,
+                out_path=out_bu_pdf,
+                title_init="AoN BU",
+                title_final="UE BU",
+                cbar_label="BU",
+                delta_label="ΔBU",
+                delta_only=True,
+                cbar_numbers=False,
+            )
+
+            if plot_lsoa:
+                out_lsoa_att_png = plots_dir / f"fw_lsoa_att_change_{tag}.png"
+                plot_lsoa_value_comparison(
+                    graph=graph,
+                    value_init=att_aon,
+                    value_final=att_ue,
+                    nodes=nodes_csv,
+                    lsoa_polygons=lsoa_polygons,
+                    edge_lsoa_map=edge_lsoa_map,
+                    out_path=out_lsoa_att_png,
+                    lsoa_name_filter=lsoa_name_filter,
+                    cbar_label="Change in ATT",
+                )
+
+                out_lsoa_bu_png = plots_dir / f"fw_lsoa_bu_change_{tag}.png"
+                plot_lsoa_value_comparison(
+                    graph=graph,
+                    value_init=bu_aon,
+                    value_final=bu_ue,
+                    nodes=nodes_csv,
+                    lsoa_polygons=lsoa_polygons,
+                    edge_lsoa_map=edge_lsoa_map,
+                    out_path=out_lsoa_bu_png,
+                    lsoa_name_filter=lsoa_name_filter,
+                    cbar_label="Change in BU",
+                )
+
+                plot_lsoa_value_state(
+                    value=att_ue,
+                    lsoa_polygons=lsoa_polygons,
+                    edge_lsoa_map=edge_lsoa_map,
+                    out_path=plots_dir / f"lsoa_att_ue_{tag}.png",
+                    title="ATT after optimisation (UE)",
+                    cbar_label="ATT",
+                    agg="mean",
+                    lsoa_name_filter=lsoa_name_filter,
+                )
+
+                plot_lsoa_value_state(
+                    value=bu_ue,
+                    lsoa_polygons=lsoa_polygons,
+                    edge_lsoa_map=edge_lsoa_map,
+                    out_path=plots_dir / f"lsoa_bu_ue_{tag}.png",
+                    title="BU after optimisation (UE)",
+                    cbar_label="BU",
+                    agg="mean",
+                    lsoa_name_filter=lsoa_name_filter,
+                )
 
             graph.weight = octt_ue
             od_octt = _compute_od_costs_unique_origins(
@@ -248,34 +428,40 @@ def _run_time_bins(
             )
 
             np.save(outputs_dir / f"octt_edge_{tag}.npy", octt_ue)
+            np.save(outputs_dir / f"att_edge_{tag}.npy", att_ue)
+            np.save(outputs_dir / f"bu_edge_{tag}.npy", bu_ue)
             np.save(outputs_dir / f"od_octt_{tag}.npy", od_octt)
 
     return (
-        np.column_stack(ue_flows),
-        np.column_stack(ue_flows_best),
+        np.column_stack(ue_flows_col),
+        np.column_stack(ue_flows_best_col),
         last_result,
     )
 
 
 def find_transport_assignment_user_equilibrium(
     *,
-    tolerance: float = 100.0,
+    tol: float = 100.0,
     parent_directory: str = "../../data",
     eps: float = 1e-6,
     compute_octt: bool = True,
     use_cache: bool = True,
     overwrite_cache: bool = False,
     debug_octt: bool = False,
+    plot_lsoa: bool = True,
+    lsoa_polygons_path: Optional[str] = None,
+    edge_lsoa_map_path: Optional[str] = None,
+    lsoa_name_filter: Optional[List[str]] = None,
 ):
     time_bin_periods = ["DAY"]
-    step_limit = 200
+    step_limit = 30
 
     parent_dir = Path(parent_directory)
     nodes_csv, plots_dir, outputs_dir = _check_and_prepare_paths(parent_dir)
 
     graph, origin_destination, demand = _load_input_data(
         parent_directory=parent_directory,
-        tol=tolerance,
+        tol=tol,
         eps=eps,
     )
 
@@ -299,7 +485,11 @@ def find_transport_assignment_user_equilibrium(
         overwrite_cache=overwrite_cache,
         debug_octt=debug_octt,
         parent_directory=parent_directory,
-        tolerance=tolerance,
+        tol=tol,
+        plot_lsoa=plot_lsoa,
+        lsoa_polygons_path=None if lsoa_polygons_path is None else Path(lsoa_polygons_path),
+        edge_lsoa_map_path=None if edge_lsoa_map_path is None else Path(edge_lsoa_map_path),
+        lsoa_name_filter=lsoa_name_filter,
     )
 
     save_ue_results(
@@ -314,6 +504,8 @@ if __name__ == "__main__":
     find_transport_assignment_user_equilibrium(
         compute_octt=True,
         debug_octt=False,
-        use_cache=False,
-        overwrite_cache=True,
+        use_cache=True,
+        overwrite_cache=False,
+        plot_lsoa=False,
+        lsoa_name_filter=["Barnsley", "Doncaster", "Rotherham", "Sheffield"],
     )
