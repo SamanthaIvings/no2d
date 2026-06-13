@@ -8,21 +8,23 @@ from typing import List, Tuple
 import numpy as np
 import pandas as pd
 
+from no2d_code.frank_wolfe import filepath_configs as fc
 from no2d_code.frank_wolfe.IO_operations import init_ue_logs, load_edges, load_filtered_od_and_demand
 from no2d_code.frank_wolfe.all_or_nothing_assignment import compute_all_or_nothing_flow
 from no2d_code.frank_wolfe.bpr import bpr_flow
+from no2d_code.frank_wolfe.digraph import Digraph
 from no2d_code.frank_wolfe.frank_wolfe_classes import FWRunConfig, FWResult
 from no2d_code.frank_wolfe.frankwolfe_ue_flex import solve_frank_wolfe_user_equilibrium
-from no2d_code.frank_wolfe.octt_mapping import octt_from_traveltime
-from no2d_code.frank_wolfe.digraph import Digraph
+from no2d_code.frank_wolfe.octt_mapping import octt_from_traveltime as _octt_legacy
 from no2d_code.frank_wolfe.shortest_path_tree_builder import get_shortest_path_tree_edges_cell
+from no2d_code.frank_wolfe.survey_octt_mapping import SurveyOCTTPipeline
 from no2d_code.visualisation.fw_flow_plotter import plot_fw_flow_comparison
 from no2d_code.visualisation.fw_stages_comparison import plot_car_stage1_vs_stage2
 
 
 @dataclass(frozen=True)
 class MultimodalConfig:
-    tol: float = 58.6
+    tol: float = 100.0
     eps: float = 1e-6
     step_limit: int = 100
 
@@ -55,6 +57,9 @@ class MultimodalConfig:
 
     bu_base_share: float = 0.1
 
+    octt_mode: str = "survey"
+    survey_xlsx: str | None = "../../data/inputs/FF_Survey_responses.xlsx"
+
 
 def find_transport_assignment_user_equilibrium_multimodal(
     parent_directory: str = "../../data",
@@ -63,9 +68,9 @@ def find_transport_assignment_user_equilibrium_multimodal(
     use_cache_stage1_car: bool = True,
     overwrite_cache_stage1_car: bool = False,
 ):
-    nodes_csv = os.path.join(parent_directory, "inputs", "nodes.csv")
+    nodes_csv = fc.input_path(parent_directory, fc.NODES_CSV)
     if not os.path.exists(nodes_csv):
-        raise FileNotFoundError(f"nodes.csv not found at: {nodes_csv}")
+        raise FileNotFoundError(f"Nodes csv file not found at: {nodes_csv}")
 
     plots_dir = os.path.join(parent_directory, "plots")
     outputs_dir = os.path.join(parent_directory, "outputs")
@@ -97,7 +102,17 @@ def find_transport_assignment_user_equilibrium_multimodal(
                os.path.join(plots_dir, "fw_flow_compare_DAY_car_stage1.png"))
 
     traveltime_car_1 = bpr_flow(graph_car.free_flow_travel_h, flows_car_1, graph_car.capacity, graph_car.bpr_params)
-    octt_edge_car_1 = octt_from_traveltime(traveltime_car_1, debug=False)
+
+    if cfg.octt_mode == "legacy":
+        octt_fn = _octt_legacy
+    else:
+        if cfg.survey_xlsx is None:
+            raise ValueError("octt_mode='survey' requires survey_xlsx in MultimodalConfig")
+        pipe = SurveyOCTTPipeline(cfg.survey_xlsx)
+        pipe.print_report()
+        octt_fn = pipe.octt_from_traveltime
+
+    octt_edge_car_1 = octt_fn(traveltime_car_1, debug=False)
 
     od_octt_mean = _compute_od_mean_edge_cost(
         graph=graph_car,
@@ -249,8 +264,16 @@ def _plot_flow(
     flows: np.ndarray,
     nodes_csv: str,
     out_png: str,
-) -> None:
-    aon = compute_all_or_nothing_flow(graph=graph, demand=demand, origin_destination=origin_destination)
+):
+    from no2d_code.frank_wolfe.shortest_path_tree_builder import (
+        get_unique_origins, build_shortest_path_trees,
+    )
+    flow0 = np.zeros(graph.u.size, dtype=float)
+    graph.weight = bpr_flow(graph.free_flow_travel_h, flow0, graph.capacity, graph.bpr_params)
+    origins = get_unique_origins(origin_destination)
+    shortest_path_tree = build_shortest_path_trees(graph, origins)
+    aon = compute_all_or_nothing_flow(demand, origin_destination, shortest_path_tree, graph.u.size)
+
     plot_fw_flow_comparison(
         graph=graph,
         flow_init=aon,
