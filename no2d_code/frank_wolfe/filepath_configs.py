@@ -1,6 +1,6 @@
 import os
 
-DATA_INPUTS_DIR = "inputs"
+DATA_INPUTS_DIR = "inputs/fw_inputs_sy_simplified"
 DATA_OUTPUTS_DIR = "outputs"
 
 # input files
