@@ -8,7 +8,7 @@ from typing import Optional, Tuple
 import numpy as np
 import pandas as pd
 
-from no2d_code.frank_wolfe.filepath_configs import (
+from no2d_code.core.filepath_configs import (
     EDGES_CSV,
     DEMAND_CSV,
     od_list_filename,
@@ -21,7 +21,7 @@ from no2d_code.frank_wolfe.filepath_configs import (
     log_path,
     UE_RESULTS_FILE,
 )
-from no2d_code.frank_wolfe.frank_wolfe_classes import FWResult
+from no2d_code.solver.frank_wolfe_classes import FWResult
 
 
 def load_edges(parent_dir: str) -> pd.DataFrame:

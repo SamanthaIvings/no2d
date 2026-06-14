@@ -23,11 +23,11 @@ import numpy as np
 import pandas as pd
 from scipy.optimize import curve_fit
 
-from no2d_code.frank_wolfe import filepath_configs as fc
-from no2d_code.frank_wolfe.IO_operations import load_edges, load_filtered_od_and_demand
-from no2d_code.frank_wolfe.bpr import bpr_flow
-from no2d_code.frank_wolfe.survey_octt_mapping import SurveyOCTTPipeline
-from no2d_code.frank_wolfe.ta_ue_multimodal_extension import (
+from no2d_code.core import filepath_configs as fc
+from no2d_code.solver.IO_operations import load_edges, load_filtered_od_and_demand
+from no2d_code.solver.bpr import bpr_flow
+from no2d_code.core.survey_octt_mapping import SurveyOCTTPipeline
+from no2d_code.core.ta_ue_multimodal_extension import (
     MultimodalConfig,
     _load_mode_layers,
     _align_mode_layers,

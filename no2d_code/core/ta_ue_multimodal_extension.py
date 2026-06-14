@@ -8,16 +8,16 @@ from typing import List, Tuple
 import numpy as np
 import pandas as pd
 
-from no2d_code.frank_wolfe import filepath_configs as fc
-from no2d_code.frank_wolfe.IO_operations import init_ue_logs, load_edges, load_filtered_od_and_demand
-from no2d_code.frank_wolfe.all_or_nothing_assignment import compute_all_or_nothing_flow
-from no2d_code.frank_wolfe.bpr import bpr_flow
-from no2d_code.frank_wolfe.digraph import Digraph
-from no2d_code.frank_wolfe.frank_wolfe_classes import FWRunConfig, FWResult
-from no2d_code.frank_wolfe.frankwolfe_ue_flex import solve_frank_wolfe_user_equilibrium
-from no2d_code.frank_wolfe.octt_mapping import octt_from_traveltime as _octt_legacy
-from no2d_code.frank_wolfe.shortest_path_tree_builder import get_shortest_path_tree_edges_cell
-from no2d_code.frank_wolfe.survey_octt_mapping import SurveyOCTTPipeline
+from no2d_code.core import filepath_configs as fc
+from no2d_code.solver.IO_operations import init_ue_logs, load_edges, load_filtered_od_and_demand
+from no2d_code.solver.all_or_nothing_assignment import compute_all_or_nothing_flow
+from no2d_code.solver.bpr import bpr_flow
+from no2d_code.solver.digraph import Digraph
+from no2d_code.solver.frank_wolfe_classes import FWRunConfig, FWResult
+from no2d_code.solver.frankwolfe_ue_flex import solve_frank_wolfe_user_equilibrium
+from no2d_code.core.octt_mapping import octt_from_traveltime as _octt_legacy
+from no2d_code.solver.shortest_path_tree_builder import get_shortest_path_tree_edges_cell
+from no2d_code.core.survey_octt_mapping import SurveyOCTTPipeline
 from no2d_code.visualisation.fw_flow_plotter import plot_fw_flow_comparison
 from no2d_code.visualisation.fw_stages_comparison import plot_car_stage1_vs_stage2
 
@@ -265,7 +265,7 @@ def _plot_flow(
     nodes_csv: str,
     out_png: str,
 ):
-    from no2d_code.frank_wolfe.shortest_path_tree_builder import (
+    from no2d_code.solver.shortest_path_tree_builder import (
         get_unique_origins, build_shortest_path_trees,
     )
     flow0 = np.zeros(graph.u.size, dtype=float)

@@ -10,7 +10,7 @@ from matplotlib.patches import FancyArrowPatch
 import warnings
 warnings.filterwarnings("ignore")
 
-OUT_DIR = Path(__file__).resolve().parent / ".." / "data" / "plots" / "function_shape_comparison"
+OUT_DIR = Path(__file__).resolve().parent / ".." / ".." / "data" / "plots" / "function_shape_comparison"
 OUT_DIR.mkdir(parents=True, exist_ok=True)
 
 # ── Colour palette ────────────────────────────────────────────────────────

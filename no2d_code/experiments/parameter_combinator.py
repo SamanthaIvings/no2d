@@ -5,7 +5,6 @@ Combinatorial parameter sweep for OCTT mapping functions.
 Sweeps control parameters for the three-stage mapping pipeline:
 
     BPR traveltime  ──►  ATT  ──►  JE  ──►  OCTT  ──►  (ATT_people, BU_people)
-
 The Frank-Wolfe UE solver is run **once** (or loaded from cache).
 All 18,150 parameter combinations are evaluated as pure post-processing
 on the fixed AoN and UE travel times — no re-solving needed.
@@ -480,15 +479,15 @@ def run_recombination_sweep(
     5. Save results (CSV + Parquet)
     6. Select most-interesting combos and generate spatial plots
     """
-    from no2d_code.frank_wolfe.IO_operations import (
+    from no2d_code.solver.IO_operations import (
         load_edges,
         load_filtered_od_and_demand,
         load_ue_cache_pickle,
         has_ue_cache_pickle,
     )
-    from no2d_code.frank_wolfe.digraph import Digraph
-    from no2d_code.frank_wolfe.bpr import bpr_flow
-    from no2d_code.frank_wolfe import filepath_configs as fc
+    from no2d_code.solver.digraph import Digraph
+    from no2d_code.solver.bpr import bpr_flow
+    from no2d_code.core import filepath_configs as fc
 
     parent_dir = Path(parent_directory)
     outputs_dir = parent_dir / "outputs"

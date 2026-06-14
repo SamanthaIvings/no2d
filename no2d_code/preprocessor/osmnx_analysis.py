@@ -15,7 +15,7 @@ from shapely.geometry.base import BaseGeometry
 @dataclass(frozen=True)
 class MapConfig:
     place: str = "South Yorkshire, England, United Kingdom"
-    out_dir: Path = Path("../plots/osm_transport_networks")
+    out_dir: Path = Path("../../plots/osm_transport_networks")
     dpi: int = 220
     figsize: Tuple[float, float] = (10, 10)
     style: Dict[str, Dict[str, object]] | None = None

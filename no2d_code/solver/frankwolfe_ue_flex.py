@@ -8,12 +8,12 @@ import numpy as np
 from numpy.typing import NDArray
 from scipy.optimize import minimize_scalar
 
-from no2d_code.frank_wolfe.all_or_nothing_assignment import compute_all_or_nothing_flow, build_edge_od_incidence_matrix
-from no2d_code.frank_wolfe.beckmann import beckmann_objective_ue, beckmann_line_search_objective_ue
-from no2d_code.frank_wolfe.bpr import bpr_flow
-from no2d_code.frank_wolfe.frank_wolfe_classes import FWRunConfig, FWResult
-from no2d_code.frank_wolfe.shortest_path_tree_builder import get_unique_origins, build_shortest_path_trees
-from no2d_code.frank_wolfe.digraph import Digraph
+from no2d_code.solver.all_or_nothing_assignment import compute_all_or_nothing_flow, build_edge_od_incidence_matrix
+from no2d_code.solver.beckmann import beckmann_objective_ue, beckmann_line_search_objective_ue
+from no2d_code.solver.bpr import bpr_flow
+from no2d_code.solver.frank_wolfe_classes import FWRunConfig, FWResult
+from no2d_code.solver.shortest_path_tree_builder import get_unique_origins, build_shortest_path_trees
+from no2d_code.solver.digraph import Digraph
 
 
 def _fw_gap_rel_gap_tot_tt(flow, flow_y, traveltime):

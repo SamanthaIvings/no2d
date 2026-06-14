@@ -9,11 +9,11 @@ import matplotlib as mpl
 import numpy as np
 import pandas as pd
 
-from no2d_code.frank_wolfe.IO_operations import load_edges, load_filtered_od_and_demand
-from no2d_code.frank_wolfe.bpr import bpr_flow
-from no2d_code.frank_wolfe.octt_mapping import octt_from_traveltime as legacy_octt
-from no2d_code.frank_wolfe.survey_octt_mapping import SurveyOCTTPipeline
-from no2d_code.frank_wolfe.ta_ue_multimodal_extension import (
+from no2d_code.solver.IO_operations import load_edges, load_filtered_od_and_demand
+from no2d_code.solver.bpr import bpr_flow
+from no2d_code.core.octt_mapping import octt_from_traveltime as legacy_octt
+from no2d_code.core.survey_octt_mapping import SurveyOCTTPipeline
+from no2d_code.core.ta_ue_multimodal_extension import (
     MultimodalConfig,
     _make_car_graph,
     _build_run_config,

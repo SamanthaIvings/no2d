@@ -5,8 +5,8 @@ from typing import List, Optional, Dict
 
 import numpy as np
 
-from no2d_code.frank_wolfe import filepath_configs as fc
-from no2d_code.frank_wolfe.IO_operations import (
+from no2d_code.core import filepath_configs as fc
+from no2d_code.solver.IO_operations import (
     init_ue_logs,
     load_edges,
     load_filtered_od_and_demand,
@@ -15,16 +15,16 @@ from no2d_code.frank_wolfe.IO_operations import (
     load_ue_cache_pickle,
     save_ue_cache_pickle,
 )
-from no2d_code.frank_wolfe.bpr import bpr_flow
-from no2d_code.frank_wolfe.frank_wolfe_classes import FWResult, FWRunConfig
-from no2d_code.frank_wolfe.frankwolfe_ue_flex import solve_frank_wolfe_user_equilibrium
-from no2d_code.frank_wolfe.digraph import Digraph
-from no2d_code.frank_wolfe.octt_mapping import (
+from no2d_code.solver.bpr import bpr_flow
+from no2d_code.solver.frank_wolfe_classes import FWResult, FWRunConfig
+from no2d_code.solver.frankwolfe_ue_flex import solve_frank_wolfe_user_equilibrium
+from no2d_code.solver.digraph import Digraph
+from no2d_code.core.octt_mapping import (
     octt_from_traveltime as _octt_legacy,
     att_bu_from_octt as _att_bu_legacy,
 )
-from no2d_code.frank_wolfe.survey_octt_mapping import SurveyOCTTPipeline
-from no2d_code.frank_wolfe.shortest_path_tree_builder import get_shortest_path_tree_edges_cell
+from no2d_code.core.survey_octt_mapping import SurveyOCTTPipeline
+from no2d_code.solver.shortest_path_tree_builder import get_shortest_path_tree_edges_cell
 from no2d_code.visualisation.fw_flow_plotter import (
     plot_fw_flow_comparison,
     plot_edge_value_comparison,

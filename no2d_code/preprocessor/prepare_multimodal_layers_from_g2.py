@@ -10,7 +10,7 @@ import pandas as pd
 from matplotlib import pyplot as plt
 import geopandas as gpd
 
-from no2d_code.frank_wolfe import filepath_configs as fc
+from no2d_code.core import filepath_configs as fc
 
 SEED = 43
 

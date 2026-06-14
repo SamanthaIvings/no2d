@@ -209,7 +209,7 @@ def plot_bush_x50(passed, x_max, sweep_dir, dpi=200):
     sm = plt.cm.ScalarMappable(cmap=cmap, norm=norm); sm.set_array([])
     fig.colorbar(sm, ax=ax, pad=0.02, aspect=30, label="spread")
     ax.grid(True, lw=0.3, alpha=0.4); fig.tight_layout()
-    fig.savefig(os.path.join(sweep_dir, "octt_spread_bush.png"), dpi=dpi, bbox_inches="tight")
+    fig.savefig(os.path.join(sweep_dir, "results/octt_spread_bush.png"), dpi=dpi, bbox_inches="tight")
     plt.close(fig)
 
 
@@ -292,7 +292,7 @@ def plot_diagnostic(passed, failed, x_max, sweep_dir, dpi=200):
     fig.suptitle(f"Spread filter diagnostics — {len(passed)} passed / {TOTAL:,} total  "
                  f"($x_{{max}}$ = {x_max})", fontsize=13)
     fig.tight_layout(rect=[0, 0, 1, 0.96])
-    fig.savefig(os.path.join(sweep_dir, "octt_spread_report.png"),
+    fig.savefig(os.path.join(sweep_dir, "results/octt_spread_report.png"),
                 dpi=dpi, bbox_inches="tight")
     plt.close(fig)
 
@@ -348,7 +348,7 @@ def plot_sample_grid(passed, x_max, sweep_dir, n=25, dpi=200):
     fig.suptitle(f"Spread-filtered sample  ({len(passed)} total, showing {len(sample)}, "
                  f"$x_{{max}}$ = {x_max})", fontsize=13)
     fig.tight_layout(rect=[0, 0, 1, 0.96])
-    fig.savefig(os.path.join(sweep_dir, "octt_spread_grid.png"),
+    fig.savefig(os.path.join(sweep_dir, "results/octt_spread_grid.png"),
                 dpi=dpi, bbox_inches="tight")
     plt.close(fig)
 
@@ -404,7 +404,7 @@ def main():
             "flat_fraction": round(m.flat_fraction, 3),
         } for m in passed]
         df = pd.DataFrame(rows)
-        csv_path = os.path.join(args.sweep_dir, "octt_spread_filtered.csv")
+        csv_path = os.path.join(args.sweep_dir, "results/octt_spread_filtered.csv")
         df.to_csv(csv_path, index=False)
         print(f"  CSV -> {csv_path}")
         print(f"\n  Passing parameter ranges:")

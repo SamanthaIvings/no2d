@@ -7,7 +7,7 @@ from typing import Dict, List, Tuple
 
 import numpy as np
 
-from no2d_code.frank_wolfe.digraph import Digraph
+from no2d_code.solver.digraph import Digraph
 
 
 def get_unique_origins(origin_destination: np.ndarray) -> np.ndarray:
