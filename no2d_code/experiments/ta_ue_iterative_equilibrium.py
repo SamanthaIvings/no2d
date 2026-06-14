@@ -21,7 +21,8 @@ from no2d_code.core.ta_ue_multimodal_extension import (
     _compute_od_mean_edge_cost,
     _split_od_demand_from_octt,
 )
-from ta_ue_sd_simulations import (
+from no2d_code.core import filepath_configs as fc
+from no2d_code.experiments.ta_ue_sd_simulations import (
     build_variants,
     PatchedSurveyOCTTPipeline,
 )
@@ -41,7 +42,7 @@ def _flush_csv(history, csv_path):
 
 
 def run_iterative_equilibrium(
-    parent_directory: str = "../../data",
+    parent_directory: str = str(fc.DATA_DIR),
     survey_xlsx: str | None = None,
     cfg: MultimodalConfig | None = None,
     max_outer: int = 15,
@@ -51,7 +52,7 @@ def run_iterative_equilibrium(
     if cfg is None:
         cfg = MultimodalConfig()
     if survey_xlsx is None:
-        survey_xlsx = cfg.survey_xlsx or "../../data/inputs/FF_Survey_responses.xlsx"
+        survey_xlsx = cfg.survey_xlsx or str(fc.data_path("inputs", "FF_Survey_responses.xlsx"))
 
     plots_root = os.path.join(parent_directory, "plots", "iterative_eq")
     outputs_root = os.path.join(parent_directory, "outputs", "iterative_eq")
@@ -303,7 +304,7 @@ def main():
     parser = argparse.ArgumentParser(
         description="Iterative mode-choice equilibrium for 4 OCTT scenarios"
     )
-    parser.add_argument("--data-dir", default="../../data")
+    parser.add_argument("--data-dir", default=str(fc.DATA_DIR))
     parser.add_argument("--survey-xlsx", default=None)
     parser.add_argument("--max-outer", type=int, default=15)
     parser.add_argument("--tol", type=float, default=0.002)

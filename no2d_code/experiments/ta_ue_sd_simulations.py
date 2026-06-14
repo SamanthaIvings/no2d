@@ -247,14 +247,14 @@ def _apply_model(model: str, params: np.ndarray, x: np.ndarray) -> np.ndarray:
 # ═══════════════════════════════════════════════════════════════════════════════
 
 def run_sd_simulations(
-    parent_directory: str = "../../data",
+    parent_directory: str = str(fc.DATA_DIR),
     survey_xlsx: str | None = None,
     cfg: MultimodalConfig | None = None,
 ):
     if cfg is None:
         cfg = MultimodalConfig()
     if survey_xlsx is None:
-        survey_xlsx = cfg.survey_xlsx or "../../data/inputs/FF_Survey_responses.xlsx"
+        survey_xlsx = cfg.survey_xlsx or str(fc.data_path("inputs", "FF_Survey_responses.xlsx"))
 
     out_root = os.path.join(parent_directory, "plots", "sd_simulations")
     outputs_dir = os.path.join(parent_directory, "outputs", "sd_simulations")
@@ -458,7 +458,7 @@ def main():
     parser = argparse.ArgumentParser(
         description="Run multimodal UE with ±1 SD survey regression variants"
     )
-    parser.add_argument("--data-dir", default="../../data",
+    parser.add_argument("--data-dir", default=str(fc.DATA_DIR),
                         help="Parent data directory")
     parser.add_argument("--survey-xlsx", default=None,
                         help="Path to FF_Survey_responses.xlsx")

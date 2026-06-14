@@ -60,7 +60,7 @@ def main() -> None:
 
 
 def _paths() -> Paths:
-    data_dir = os.path.normpath(os.path.join(os.path.dirname(__file__), "..", "..", "data"))
+    data_dir = str(fc.DATA_DIR)
 
     edges_csv = fc.input_path(data_dir, fc.EDGES_CSV)
 

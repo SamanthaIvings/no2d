@@ -459,10 +459,9 @@ def select_interesting_combos(
 
 def run_recombination_sweep(
     *,
-    parent_directory: str = "../../data",
+    parent_directory: str | None = None,
     tol: float = 100.0,
     eps: float = 1e-6,
-    use_cache: bool = True,
     plot_top_n: int = 5,
     plot_lsoa: bool = False,
     lsoa_name_filter: Optional[List[str]] = None,
@@ -488,6 +487,9 @@ def run_recombination_sweep(
     from no2d_code.solver.digraph import Digraph
     from no2d_code.solver.bpr import bpr_flow
     from no2d_code.core import filepath_configs as fc
+
+    if parent_directory is None:
+        parent_directory = str(fc.DATA_DIR)
 
     parent_dir = Path(parent_directory)
     outputs_dir = parent_dir / "outputs"
@@ -554,7 +556,6 @@ def run_recombination_sweep(
 
 if __name__ == "__main__":
     run_recombination_sweep(
-        use_cache=True,
         plot_top_n=5,
         plot_lsoa=False,
         lsoa_name_filter=["Barnsley", "Doncaster", "Rotherham", "Sheffield"],

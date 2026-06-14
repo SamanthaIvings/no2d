@@ -58,11 +58,11 @@ class MultimodalConfig:
     bu_base_share: float = 0.1
 
     octt_mode: str = "survey"
-    survey_xlsx: str | None = "../../data/inputs/FF_Survey_responses.xlsx"
+    survey_xlsx: str | None = str(fc.data_path("inputs", "FF_Survey_responses.xlsx"))
 
 
 def find_transport_assignment_user_equilibrium_multimodal(
-    parent_directory: str = "../../data",
+    parent_directory: str = str(fc.DATA_DIR),
     cfg: MultimodalConfig = MultimodalConfig(),
     *,
     use_cache_stage1_car: bool = True,

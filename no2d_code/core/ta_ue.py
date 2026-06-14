@@ -382,7 +382,7 @@ def _run_time_bins(
 def find_transport_assignment_user_equilibrium(
     *,
     tol: float = 100.0,
-    parent_directory: str = "../../data",
+    parent_directory: str = str(fc.DATA_DIR),
     eps: float = 1e-6,
     compute_octt: bool = True,
     use_cache: bool = True,
@@ -440,5 +440,5 @@ if __name__ == "__main__":
         plot_lsoa=False,
         lsoa_name_filter=["Barnsley", "Doncaster", "Rotherham", "Sheffield"],
         octt_mode="survey",
-        survey_xlsx="../../data/inputs/FF_Survey_responses.xlsx",
+        survey_xlsx=str(fc.data_path("inputs", "FF_Survey_responses.xlsx")),
     )

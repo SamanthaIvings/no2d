@@ -162,14 +162,14 @@ def compute_factorial_average_octt(
 
 
 def run_factorial_average(
-    parent_directory: str = "../../data",
+    parent_directory: str = str(fc.DATA_DIR),
     survey_xlsx: str | None = None,
     cfg: MultimodalConfig | None = None,
 ):
     if cfg is None:
         cfg = MultimodalConfig()
     if survey_xlsx is None:
-        survey_xlsx = cfg.survey_xlsx or "../../data/inputs/FF_Survey_responses.xlsx"
+        survey_xlsx = cfg.survey_xlsx or str(fc.data_path("inputs", "FF_Survey_responses.xlsx"))
 
     tag = "factorial_avg"
     plots_dir = os.path.join(parent_directory, "plots", "sd_simulations", tag)
@@ -329,7 +329,7 @@ def main():
     parser = argparse.ArgumentParser(
         description="Full-factorial 3^6 averaged OCTT → 2-stage FW"
     )
-    parser.add_argument("--data-dir", default="../../data")
+    parser.add_argument("--data-dir", default=str(fc.DATA_DIR))
     parser.add_argument("--survey-xlsx", default=None)
     parser.add_argument("--step-limit", type=int, default=None)
     args = parser.parse_args()
