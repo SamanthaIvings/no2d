@@ -26,7 +26,7 @@ from no2d_code.visualisation.fw_stages_comparison import plot_car_stage1_vs_stag
 class MultimodalConfig:
     tol: float = 100.0
     eps: float = 1e-6
-    step_limit: int = 100
+    step_limit: int = 10
 
     bus_occupancy: float = 25.0
 
