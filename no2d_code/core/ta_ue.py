@@ -396,7 +396,7 @@ def find_transport_assignment_user_equilibrium(
     survey_xlsx: Optional[str] = None,
 ):
     time_bin_periods = ["DAY"]
-    step_limit = 30
+    step_limit = 100
 
     parent_dir = Path(parent_directory)
     nodes_csv, plots_dir, outputs_dir = _check_and_prepare_paths(parent_dir)

@@ -119,10 +119,6 @@ def build_response_surface(parent_directory: str, scfg: ScreenConfig
             origin_destination=od,
             demand=demand_total * frac,
             run_cfg=run_cfg,
-            parent_directory=parent_directory,
-            tag=f"respsurf_frac{frac:.2f}",
-            use_cache=True,
-            overwrite_cache=False,
         )
         tt = bpr_flow(graph.free_flow_travel_h, flows, graph.capacity, graph.bpr_params)
         od_tt = _compute_od_mean_edge_cost(graph=graph, origin_destination=od, edge_cost=tt)

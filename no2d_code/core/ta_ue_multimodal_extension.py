@@ -26,7 +26,7 @@ from no2d_code.visualisation.fw_stages_comparison import plot_car_stage1_vs_stag
 class MultimodalConfig:
     tol: float = 100.0
     eps: float = 1e-6
-    step_limit: int = 10
+    step_limit: int = 100
 
     bus_occupancy: float = 25.0
 
@@ -92,10 +92,6 @@ def find_transport_assignment_user_equilibrium_multimodal(
         origin_destination=origin_destination,
         demand=demand_total,
         run_cfg=run_cfg,
-        parent_directory=parent_directory,
-        tag="DAY_car_stage1",
-        use_cache=use_cache_stage1_car,
-        overwrite_cache=overwrite_cache_stage1_car,
     )
 
     _plot_flow(graph_car, origin_destination, demand_total, flows_car_1, nodes_csv,
@@ -147,16 +143,12 @@ def find_transport_assignment_user_equilibrium_multimodal(
         origin_destination=origin_destination,
         demand=ct_car,
         run_cfg=run_cfg,
-        parent_directory=parent_directory,
-        tag="DAY_car_stage2",
-        use_cache=False,
-        overwrite_cache=False,
     )
     _plot_flow(graph_car_2, origin_destination, ct_car, flows_car_2, nodes_csv,
                os.path.join(plots_dir, "fw_flow_compare_DAY_car_stage2.png"))
 
     plot_car_stage1_vs_stage2(
-        graph=graph_car_2,  # same topology, ok
+        graph=graph_car_2,
         flows_stage1=flows_car_1,
         flows_stage2=flows_car_2,
         nodes_csv=nodes_csv,
@@ -170,10 +162,6 @@ def find_transport_assignment_user_equilibrium_multimodal(
         origin_destination=origin_destination,
         demand=bus_veh,
         run_cfg=run_cfg,
-        parent_directory=parent_directory,
-        tag="DAY_bus_stage2",
-        use_cache=False,
-        overwrite_cache=False,
     )
     _plot_flow(graph_bus, origin_destination, bus_veh, flows_bus, nodes_csv,
                os.path.join(plots_dir, "fw_flow_compare_DAY_bus_stage2.png"))
@@ -184,10 +172,6 @@ def find_transport_assignment_user_equilibrium_multimodal(
         origin_destination=origin_destination,
         demand=att_people,
         run_cfg=run_cfg,
-        parent_directory=parent_directory,
-        tag="DAY_bike_stage2",
-        use_cache=False,
-        overwrite_cache=False,
     )
     _plot_flow(graph_bike, origin_destination, att_people, flows_bike, nodes_csv,
                os.path.join(plots_dir, "fw_flow_compare_DAY_bike_stage2.png"))
@@ -239,13 +223,13 @@ def _run_single_ue(
     origin_destination: np.ndarray,
     demand: np.ndarray,
     run_cfg: FWRunConfig,
-    parent_directory: str,
-    tag: str,
-    use_cache: bool,
-    overwrite_cache: bool,
 ) -> Tuple[np.ndarray, FWResult]:
-    flow0 = np.zeros(graph.u.size, dtype=float)
-    graph.weight = bpr_flow(graph.free_flow_travel_h, flow0, graph.capacity, graph.bpr_params)
+    graph.weight = bpr_flow(
+        graph.free_flow_travel_h,
+        np.zeros(graph.u.size),
+        graph.capacity,
+        graph.bpr_params,
+    )
 
     result = solve_frank_wolfe_user_equilibrium(
         demand=demand,
@@ -253,8 +237,8 @@ def _run_single_ue(
         origin_destination=origin_destination,
         config=run_cfg,
     )
-    flows = np.asarray(result.flows, dtype=float)
-    return flows, result
+
+    return np.asarray(result.flows, dtype=float), result
 
 
 def _plot_flow(
@@ -285,22 +269,10 @@ def _plot_flow(
 
 
 def _load_mode_layers(parent_directory: str) -> Tuple[pd.DataFrame, pd.DataFrame]:
-    base = os.path.join(parent_directory, "outputs", "osm_sheffield")
-    bus_pkl = os.path.join(base, "edges_bus.pkl")
-    bike_pkl = os.path.join(base, "edges_bike.pkl")
+    base = os.path.join(parent_directory, fc.DATA_INPUTS_DIR)
 
-    if not os.path.exists(bus_pkl):
-        raise FileNotFoundError(f"Missing bus layer pickle: {bus_pkl}")
-    if not os.path.exists(bike_pkl):
-        raise FileNotFoundError(f"Missing bike layer pickle: {bike_pkl}")
-
-    with open(bus_pkl, "rb") as f:
-        edges_bus = pickle.load(f)
-    with open(bike_pkl, "rb") as f:
-        edges_bike = pickle.load(f)
-
-    if not isinstance(edges_bus, pd.DataFrame) or not isinstance(edges_bike, pd.DataFrame):
-        raise TypeError("edges_bus.pkl / edges_bike.pkl must contain pandas DataFrames")
+    edges_bus = pd.read_pickle(os.path.join(base, "edges_bus.pkl"))
+    edges_bike = pd.read_pickle(os.path.join(base, "edges_bike.pkl"))
 
     return edges_bus, edges_bike
 

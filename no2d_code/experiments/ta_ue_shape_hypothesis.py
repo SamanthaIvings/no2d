@@ -293,10 +293,6 @@ def run_shape_experiment(
         origin_destination=origin_destination,
         demand=demand_total,
         run_cfg=run_cfg,
-        parent_directory=parent_directory,
-        tag="DAY_car_stage1_shared",
-        use_cache=True,
-        overwrite_cache=False,
     )
     tt_s1 = bpr_flow(graph_s1.free_flow_travel_h, flows_car_s1, graph_s1.capacity, graph_s1.bpr_params)
 
@@ -399,10 +395,6 @@ def run_shape_experiment(
                     origin_destination=origin_destination,
                     demand=ct_car,
                     run_cfg=run_cfg,
-                    parent_directory=parent_directory,
-                    tag=f"shapeEQ_{sc_name}_outer{outer}",
-                    use_cache=False,
-                    overwrite_cache=False,
                 )
                 tt_current = bpr_flow(graph_k.free_flow_travel_h, flows_k,
                                       graph_k.capacity, graph_k.bpr_params)

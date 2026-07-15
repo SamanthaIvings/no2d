@@ -192,10 +192,6 @@ def run_factorial_average(
         origin_destination=origin_destination,
         demand=demand_total,
         run_cfg=run_cfg,
-        parent_directory=parent_directory,
-        tag="DAY_car_stage1_factorial",
-        use_cache=True,
-        overwrite_cache=False,
     )
 
     _plot_flow(
@@ -248,9 +244,6 @@ def run_factorial_average(
         origin_destination=origin_destination,
         demand=ct_car,
         run_cfg=run_cfg,
-        parent_directory=parent_directory,
-        tag=f"DAY_car_stage2_{tag}",
-        use_cache=False, overwrite_cache=False,
     )
     _plot_flow(
         graph_car_2, origin_destination, ct_car, flows_car_2, nodes_csv,
@@ -271,9 +264,6 @@ def run_factorial_average(
         origin_destination=origin_destination,
         demand=bus_veh,
         run_cfg=run_cfg,
-        parent_directory=parent_directory,
-        tag=f"DAY_bus_stage2_{tag}",
-        use_cache=False, overwrite_cache=False,
     )
     _plot_flow(
         graph_bus, origin_destination, bus_veh, flows_bus, nodes_csv,
@@ -286,9 +276,6 @@ def run_factorial_average(
         origin_destination=origin_destination,
         demand=att_people,
         run_cfg=run_cfg,
-        parent_directory=parent_directory,
-        tag=f"DAY_bike_stage2_{tag}",
-        use_cache=False, overwrite_cache=False,
     )
     _plot_flow(
         graph_bike, origin_destination, att_people, flows_bike, nodes_csv,
